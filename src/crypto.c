@@ -33,11 +33,11 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
         return 1;
     }
 
-    // ===== HEADER =====
+    // Header
     fwrite(HEADER, 1, strlen(HEADER), out);
     fwrite(iv, 1, AES_BLOCK_SIZE, out);
 
-    // ===== Simpan nama file asli (tanpa path) =====
+    // Save original name
     char *filename_copy = strdup(input_file);
     const char *basename_only = basename(filename_copy);
     unsigned char name_len = (unsigned char)strlen(basename_only);
@@ -46,7 +46,7 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
     fwrite(basename_only, 1, name_len, out);
     free(filename_copy);
 
-    // ===== ENCRYPTION =====
+    // ENCRYPTION
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
         fprintf(stderr, "Failed to create cipher context.\n");
@@ -85,7 +85,7 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
     fclose(in);
     fclose(out);
 
-    printf("✅ Encrypted successfully: %s → %s\n", input_file, output_file);
+    printf("Encrypted successfully: %s → %s\n", input_file, output_file);
     return 0;
 }
 
@@ -108,7 +108,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
     derive_key(password, key);
     fread(iv, 1, AES_BLOCK_SIZE, in);
 
-    // ===== Baca metadata nama file =====
+    // Read Metadata File
     unsigned char name_len = 0;
     fread(&name_len, 1, 1, in);
     if (name_len == 0 || name_len > 255) {
@@ -157,11 +157,11 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
     }
 
     if (!EVP_DecryptFinal_ex(ctx, outbuf, &outlen)) {
-        fprintf(stderr, "❌ Incorrect password or corrupted file.\n");
+        fprintf(stderr, "Incorrect password or corrupted file.\n");
         EVP_CIPHER_CTX_free(ctx);
         fclose(in);
         fclose(out);
-        remove(output_name); // hapus file rusak
+        remove(output_name); // delete broken file
         return 1;
     }
 
