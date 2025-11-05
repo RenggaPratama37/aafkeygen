@@ -1,0 +1,12 @@
+# Binaries and build files
+aafkeygen
+build/
+*.o
+*.deb
+aafkeygen_*/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*~
+*.swp
