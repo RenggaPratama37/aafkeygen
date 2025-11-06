@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <openssl/crypto.h>
+#include <sys/stat.h>
 
 #define AES_KEY_SIZE 32
 #define AES_BLOCK_SIZE 16
@@ -102,6 +103,85 @@ enc_fail:
     unlink(output_file);
     OPENSSL_cleanse(key, sizeof(key));
     return 1;
+}
+
+/* Inspect an AAF file and print header/metadata information (v1 legacy-aware).
+ * This is a non-destructive helper used by the CLI `--inspect` to show basic
+ * information like whether the header exists, IV bytes and original filename.
+ */
+int inspect_file(const char *input_file) {
+    FILE *in = fopen(input_file, "rb");
+    if (!in) {
+        perror("File error");
+        return 1;
+    }
+
+    unsigned char header[16] = {0};
+    size_t header_len = strlen(HEADER);
+    size_t read_bytes = fread(header, 1, header_len, in);
+
+    struct stat st;
+    if (stat(input_file, &st) == -1) {
+        perror("stat");
+        fclose(in);
+        return 1;
+    }
+
+    printf("File: %s\n", input_file);
+    printf("Size: %lld bytes\n", (long long)st.st_size);
+
+    if (read_bytes < header_len || strcmp((char *)header, HEADER) != 0) {
+        printf("Format: legacy (no header detected)\n");
+        /* For legacy files we can't reliably show IV/original name without parsing
+           the old assumptions (IV = zeros or implicit). We'll try to read a bit
+           but report limited info. */
+        printf("Note: legacy format uses zero IV by default or older behavior.\n");
+        fclose(in);
+        return 0;
+    }
+
+    printf("Format: %s\n", HEADER);
+
+    unsigned char iv[AES_BLOCK_SIZE];
+    if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
+        fprintf(stderr, "Failed to read IV.\n");
+        fclose(in);
+        return 1;
+    }
+
+    printf("IV: ");
+    for (int i = 0; i < AES_BLOCK_SIZE; i++) printf("%02x", iv[i]);
+    printf("\n");
+
+    uint8_t name_len = 0;
+    if (fread(&name_len, 1, 1, in) != 1) {
+        fprintf(stderr, "Failed to read name length.\n");
+        fclose(in);
+        return 1;
+    }
+
+    char original_name[256] = {0};
+    if (name_len > 0) {
+        if (name_len >= sizeof(original_name)) name_len = sizeof(original_name) - 1;
+        if (fread(original_name, 1, name_len, in) != name_len) {
+            fprintf(stderr, "Failed to read original filename.\n");
+            fclose(in);
+            return 1;
+        }
+        original_name[name_len] = '\0';
+        printf("Original filename: %s\n", original_name);
+    } else {
+        printf("Original filename: (none)\n");
+    }
+
+    /* ciphertext size approx = total size - header parts */
+    long long header_bytes = header_len + AES_BLOCK_SIZE + 1 + name_len;
+    long long cipher_bytes = (long long)st.st_size - header_bytes;
+    if (cipher_bytes < 0) cipher_bytes = 0;
+    printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
+
+    fclose(in);
+    return 0;
 }
 
 // === backward-compatible decrypt ===

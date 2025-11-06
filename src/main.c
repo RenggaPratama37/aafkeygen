@@ -4,8 +4,9 @@
 #include <unistd.h>
 #include "crypto.h"
 #include <time.h>
+#include <openssl/rand.h>
+#include "version.h"
 
-#define VERSION "1.3.1"
 
 void print_help() {
     printf("AAFKeygen v%s\n", VERSION);
@@ -24,8 +25,16 @@ void print_help() {
 
 static void random_string(char *buf, size_t len) {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    unsigned char rnd[len];
+    if (len == 0) return;
+    if (RAND_bytes(rnd, (int)len) != 1) {
+        /* fallback to simple pseudo-randomness, unlikely */
+        for (size_t i = 0; i < len - 1; i++) buf[i] = charset[rand() % (sizeof(charset) - 1)];
+        buf[len - 1] = '\0';
+        return;
+    }
     for (size_t i = 0; i < len - 1; i++) {
-        buf[i] = charset[rand() % (sizeof(charset) - 1)];
+        buf[i] = charset[rnd[i] % (sizeof(charset) - 1)];
     }
     buf[len - 1] = '\0';
 }
@@ -52,6 +61,15 @@ int main(int argc, char *argv[]) {
             keep = 1;
         } else if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--random-name")) {
             random_name = 1;
+        } else if (!strcmp(argv[i], "--inspect")) {
+            /* Inspect header/metadata of a .aaf file */
+            if (i + 1 >= argc) {
+                print_help();
+                return 1;
+            }
+            input_file = argv[++i];
+            if (inspect_file(input_file) != 0) return 1;
+            return 0;
         } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             print_help();
             return 0;
@@ -64,7 +82,6 @@ int main(int argc, char *argv[]) {
     }
 
     char default_output[256];
-    srand(time(NULL));
 
     if (encrypt) {
         if (random_name) {
