@@ -1,64 +1,112 @@
-#include <getopt.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "crypto.h"
+#include <time.h>
+
+#define VERSION "1.3.1"
+
+void print_help() {
+    printf("AAFKeygen v%s\n", VERSION);
+    printf("Usage:\n");
+    printf("  aafkeygen -E <file> -p <password> [options]\n");
+    printf("  aafkeygen -D <file.aaf> -p <password> [options]\n\n");
+    printf("Options:\n");
+    printf("  -E, --encrypt <file>       Encrypt file\n");
+    printf("  -D, --decrypt <file>       Decrypt file\n");
+    printf("  -p, --password <pass>      Password\n");
+    printf("  -o, --output <name>        Custom output file name\n");
+    printf("  -r, --random-name          Generate random output filename\n");
+    printf("      --keep                 Keep original file after operation\n");
+    printf("  -h, --help                 Show this message\n");
+}
+
+static void random_string(char *buf, size_t len) {
+    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    for (size_t i = 0; i < len - 1; i++) {
+        buf[i] = charset[rand() % (sizeof(charset) - 1)];
+    }
+    buf[len - 1] = '\0';
+}
 
 int main(int argc, char *argv[]) {
-    int opt;
-    int mode = 0; // 1 = encrypt, 2 = decrypt
-    char *password = NULL;
-    char *output = NULL;
-    int delete_original = 0;
+    const char *input_file = NULL, *output_file = NULL, *password = NULL;
+    int encrypt = 0, decrypt = 0, keep = 0, random_name = 0;
 
-    static struct option long_opts[] = {
-        {"encrypt", required_argument, 0, 'E'},
-        {"decrypt", required_argument, 0, 'D'},
-        {"password", required_argument, 0, 'p'},
-        {"output", required_argument, 0, 'o'},
-        {"delete-original", no_argument, 0, 'x'},
-        {"version", no_argument, 0, 'v'},
-        {0, 0, 0, 0}
-    };
-
-    char *input = NULL;
-
-    while ((opt = getopt_long(argc, argv, "E:D:p:o:xv", long_opts, NULL)) != -1) {
-        switch (opt) {
-            case 'E': mode = 1; input = optarg; break;
-            case 'D': mode = 2; input = optarg; break;
-            case 'p': password = optarg; break;
-            case 'o': output = optarg; break;
-            case 'x': delete_original = 1; break;
-            case 'v': printf("aafkeygen v1.2\n"); return 0;
-            default: fprintf(stderr, "Use -E or -D with -p\n"); return 1;
-        }
-    }
-
-    if (!input || !password) {
-        fprintf(stderr, "Usage: aafkeygen -E|-D <file> -p <password> [-o <output>] [--delete-original]\n");
+    if (argc < 2) {
+        print_help();
         return 1;
     }
 
-    if (mode == 1) {
-        // Encrypt
-        char default_out[512];
-        if (!output) snprintf(default_out, sizeof(default_out), "%s.aaf", input);
-        const char *out_path = output ? output : default_out;
-        printf("🔒 Encrypting: %s -> %s\n", input, out_path);
-        encrypt_file(input, out_path, password);
-        if (delete_original) remove(input);
-    } else if (mode == 2) {
-        // Decrypt
-        char default_out[512];
-        if (!output) {
-            strcpy(default_out, input);
-            char *ext = strrchr(default_out, '.');
-            if (ext && strcmp(ext, ".aaf") == 0) *ext = '\0';
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-E") || !strcmp(argv[i], "--encrypt")) {
+            encrypt = 1; input_file = argv[++i];
+        } else if (!strcmp(argv[i], "-D") || !strcmp(argv[i], "--decrypt")) {
+            decrypt = 1; input_file = argv[++i];
+        } else if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--password")) {
+            password = argv[++i];
+        } else if (!strcmp(argv[i], "-o") || !strcmp(argv[i], "--output")) {
+            output_file = argv[++i];
+        } else if (!strcmp(argv[i], "--keep")) {
+            keep = 1;
+        } else if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--random-name")) {
+            random_name = 1;
+        } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            print_help();
+            return 0;
         }
-        const char *out_path = output ? output : default_out;
-        printf("🔓 Decrypting: %s -> %s\n", input, out_path);
-        decrypt_file(input, out_path, password);
-        if (delete_original) remove(input);
+    }
+
+    if (!input_file || !password || (!encrypt && !decrypt)) {
+        print_help();
+        return 1;
+    }
+
+    char default_output[256];
+    srand(time(NULL));
+
+    if (encrypt) {
+        if (random_name) {
+            char random[12];
+            random_string(random, sizeof(random));
+            snprintf(default_output, sizeof(default_output), "%s.aaf", random);
+            output_file = default_output;
+        } else if (!output_file) {
+            snprintf(default_output, sizeof(default_output), "%s.aaf", input_file);
+            output_file = default_output;
+        }
+
+        printf("[+] Encrypting '%s' → '%s'\n", input_file, output_file);
+        if (encrypt_file(input_file, output_file, password) == 0) {
+            printf("✅ Encryption complete: %s\n", output_file);
+            if (!keep) {
+                remove(input_file);
+                printf("[–] Original file deleted.\n");
+            }
+        } else {
+            fprintf(stderr, "[x] Encryption failed.\n");
+        }
+    }
+
+    else if (decrypt) {
+        char default_output[256];
+        snprintf(default_output, sizeof(default_output), "%s", input_file);
+
+        char *dot = strstr(default_output, ".aaf");
+        if (dot) *dot = '\0';
+        if (!output_file) output_file = default_output;
+
+        printf("[+] Decrypting '%s' → '%s'\n", input_file, output_file);
+        if (decrypt_file(input_file, output_file, password) == 0) {
+            printf("✅ Decryption complete: %s\n", output_file);
+            if (!keep) {
+                remove(input_file);
+                printf("[–] Encrypted file deleted.\n");
+            }
+        } else {
+            fprintf(stderr, "[x] Decryption failed.\n");
+        }
     }
 
     return 0;

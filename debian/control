@@ -1,5 +1,5 @@
 Package: aafkeygen
-Version: 1.2
+Version: 1.3.1
 Section: utils
 Priority: optional
 Architecture: amd64
