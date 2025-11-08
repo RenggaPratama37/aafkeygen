@@ -6,7 +6,7 @@
 
 # --- Project info ---
 NAME        := aafkeygen
-BERSION     := 1.4.4
+VERSION     := 1.4.4
 BINARY      := $(NAME)
 SRC_DIR     := src
 BUILD_DIR   := build
@@ -77,6 +77,15 @@ deb: $(BINARY)
 deb-arch: $(BINARY)
 	@echo "Building .deb for ARCH=$(ARCH) (DEB_ARCH=$(DEB_ARCH))"
 	$(MAKE) deb
+
+.PHONY: deb-docker
+deb-docker:
+	@echo "Building .deb via Docker for ARCH=$(ARCH) (DEB_ARCH=$(DEB_ARCH))"
+	@if [ "$(DEB_ARCH)" = "arm64" ]; then \
+		docker run --rm --platform linux/arm64 -v "$$PWD":/src -w /src ubuntu:24.04 bash -lc "set -euo pipefail; apt-get update; apt-get install -y build-essential libssl-dev dpkg-dev ca-certificates; make clean || true; make ARCH=aarch64; mkdir -p /src/$(DEB_DIR)/usr/bin; cp aafkeygen /src/$(DEB_DIR)/usr/bin/; cp -r debian /src/$(DEB_DIR)/DEBIAN || true; dpkg-deb --build /src/$(DEB_DIR)"; \
+	else \
+		$(MAKE) deb-arch; \
+	fi
 
 # --- Help menu ---
 help:
