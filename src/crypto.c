@@ -7,12 +7,22 @@
 #include <unistd.h>
 #include <openssl/crypto.h>
 #include <sys/stat.h>
+#include <openssl/evp.h>
 
 #define AES_KEY_SIZE 32
 #define AES_BLOCK_SIZE 16
 #define OLD_HEADER "AAFv1"
 #define NEW_MAGIC "AAF4"
-#define NEW_FORMAT_VERSION 1
+#define NEW_FORMAT_VERSION 2
+/* KDF identifiers */
+#define KDF_NONE 0
+#define KDF_PBKDF2_HMAC_SHA256 1
+#define DEFAULT_SALT_LEN 16
+#define DEFAULT_PBKDF2_ITERS 100000
+
+/* Globals controlled by main.c */
+unsigned int pbkdf2_iterations = 0;
+int use_legacy_kdf = 0;
 
 static void derive_key(const char *password, unsigned char *key) {
     EVP_Digest(password, strlen(password), key, NULL, EVP_sha256(), NULL);
@@ -70,10 +80,47 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
         return 1;
     }
 
-    /* New format header (AAF4): magic(4) | version(1) | name_len(2) | timestamp(8) | IV(16) | name */
+    /* New format header (AAF4 v2): magic(4) | version(1) | kdf_id(1) | salt_len(1) | salt | iterations(4 BE) | name_len(2) | timestamp(8) | IV(16) | name */
     if (fwrite(NEW_MAGIC, 1, 4, out) != 4) goto write_error;
     uint8_t fmt_ver = NEW_FORMAT_VERSION;
     if (fwrite(&fmt_ver, 1, 1, out) != 1) goto write_error;
+
+    /* KDF metadata: we'll use PBKDF2-HMAC-SHA256 with fixed salt length */
+    uint8_t kdf_id = KDF_PBKDF2_HMAC_SHA256;
+    if (fwrite(&kdf_id, 1, 1, out) != 1) goto write_error;
+    uint8_t salt_len = DEFAULT_SALT_LEN;
+    if (fwrite(&salt_len, 1, 1, out) != 1) goto write_error;
+
+    unsigned char salt[DEFAULT_SALT_LEN];
+    if (RAND_bytes(salt, DEFAULT_SALT_LEN) != 1) {
+        fprintf(stderr, "Randomness generation for salt failed.\n");
+        goto write_error;
+    }
+    if (fwrite(salt, 1, DEFAULT_SALT_LEN, out) != DEFAULT_SALT_LEN) goto write_error;
+
+    uint32_t iterations = DEFAULT_PBKDF2_ITERS;
+    /* Allow caller to override iterations via global variable set by main */
+    extern uint32_t pbkdf2_iterations;
+    if (pbkdf2_iterations > 0) iterations = pbkdf2_iterations;
+    /* write iterations as big-endian */
+    unsigned char itb[4];
+    itb[0] = (iterations >> 24) & 0xFF;
+    itb[1] = (iterations >> 16) & 0xFF;
+    itb[2] = (iterations >> 8) & 0xFF;
+    itb[3] = iterations & 0xFF;
+    if (fwrite(itb, 1, 4, out) != 4) goto write_error;
+
+    /* derive key with PBKDF2 unless legacy flag is set */
+    extern int use_legacy_kdf;
+    if (!use_legacy_kdf) {
+        if (!PKCS5_PBKDF2_HMAC(password, strlen(password), salt, DEFAULT_SALT_LEN, iterations, EVP_sha256(), AES_KEY_SIZE, key)) {
+            fprintf(stderr, "PBKDF2 derivation failed.\n");
+            goto write_error;
+        }
+        /* key derived and IV set */
+    } else {
+        derive_key(password, key);
+    }
 
     size_t fnlen = strlen(input_file);
     if (fnlen > 65535) fnlen = 65535;
@@ -179,6 +226,42 @@ int inspect_file(const char *input_file) {
         }
         printf("Format version: %u\n", (unsigned)fmt_ver);
 
+        /* Newer format (v2+) includes KDF metadata */
+        uint8_t kdf_id = 0;
+        uint8_t salt_len = 0;
+        uint32_t iterations = 0;
+        if (fmt_ver >= 2) {
+            if (fread(&kdf_id, 1, 1, in) != 1) {
+                fprintf(stderr, "Failed to read kdf id.\n");
+                fclose(in);
+                return 1;
+            }
+            if (fread(&salt_len, 1, 1, in) != 1) {
+                fprintf(stderr, "Failed to read salt length.\n");
+                fclose(in);
+                return 1;
+            }
+            unsigned char saltbuf[256];
+            if (salt_len > 0) {
+                    if ((int)salt_len > (int)(sizeof(saltbuf) - 1)) salt_len = (uint8_t)(sizeof(saltbuf) - 1);
+                if (fread(saltbuf, 1, salt_len, in) != salt_len) {
+                    fprintf(stderr, "Failed to read salt.\n");
+                    fclose(in);
+                    return 1;
+                }
+                printf("KDF: %s\n", kdf_id == KDF_PBKDF2_HMAC_SHA256 ? "PBKDF2-HMAC-SHA256" : "unknown");
+                printf("Salt: "); for (int i=0;i<salt_len;i++) printf("%02x", saltbuf[i]); printf("\n");
+            }
+            unsigned char itb[4];
+            if (fread(itb, 1, 4, in) != 4) {
+                fprintf(stderr, "Failed to read iterations.\n");
+                fclose(in);
+                return 1;
+            }
+            iterations = ((uint32_t)itb[0] << 24) | ((uint32_t)itb[1] << 16) | ((uint32_t)itb[2] << 8) | (uint32_t)itb[3];
+            printf("Iterations: %u\n", iterations);
+        }
+
         uint16_t name_len16 = 0;
         if (!read_u16_be(in, &name_len16)) {
             fprintf(stderr, "Failed to read name length.\n");
@@ -218,7 +301,9 @@ int inspect_file(const char *input_file) {
             printf("Original filename: (none)\n");
         }
 
-        long long header_bytes = 4 + 1 + 2 + 8 + AES_BLOCK_SIZE + name_len16;
+        long long header_bytes = 4 + 1;
+        if (fmt_ver >= 2) header_bytes += 1 + 1 + /* saltlen & salt */ 0 + 4; /* we can't know exact salt size here in calculation */
+        header_bytes += 2 + 8 + AES_BLOCK_SIZE + name_len16;
         long long cipher_bytes = (long long)st.st_size - header_bytes;
         if (cipher_bytes < 0) cipher_bytes = 0;
         printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
@@ -290,7 +375,12 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
     }
 
     unsigned char key[AES_KEY_SIZE], iv[AES_BLOCK_SIZE];
+    /* default derive; may be replaced when parsing header v2+ */
     derive_key(password, key);
+
+    /* globals that may be set by main */
+    extern uint32_t pbkdf2_iterations;
+    extern int use_legacy_kdf;
 
     unsigned char header4[4] = {0};
     size_t read4 = fread(header4, 1, 4, in);
@@ -304,6 +394,51 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             fprintf(stderr, "Failed to read format version.\n");
             fclose(in);
             return 1;
+        }
+
+        /* handle KDF metadata for version >= 2 */
+        uint8_t kdf_id = KDF_NONE;
+        uint8_t salt_len = 0;
+        unsigned char saltbuf[256];
+        uint32_t iterations = 0;
+        if (fmt_ver >= 2) {
+            if (fread(&kdf_id, 1, 1, in) != 1) {
+                fprintf(stderr, "Failed to read kdf id.\n");
+                fclose(in);
+                return 1;
+            }
+            if (fread(&salt_len, 1, 1, in) != 1) {
+                fprintf(stderr, "Failed to read salt length.\n");
+                fclose(in);
+                return 1;
+            }
+            if (salt_len > 0) {
+                if ((int)salt_len > (int)(sizeof(saltbuf) - 1)) salt_len = (uint8_t)(sizeof(saltbuf) - 1);
+                if (fread(saltbuf, 1, salt_len, in) != salt_len) {
+                    fprintf(stderr, "Failed to read salt.\n");
+                    fclose(in);
+                    return 1;
+                }
+            }
+            unsigned char itb[4];
+            if (fread(itb, 1, 4, in) != 4) {
+                fprintf(stderr, "Failed to read iterations.\n");
+                fclose(in);
+                return 1;
+            }
+            iterations = ((uint32_t)itb[0] << 24) | ((uint32_t)itb[1] << 16) | ((uint32_t)itb[2] << 8) | (uint32_t)itb[3];
+
+            /* derive key now using PBKDF2 unless legacy requested */
+            extern int use_legacy_kdf;
+                if (!use_legacy_kdf && kdf_id == KDF_PBKDF2_HMAC_SHA256) {
+                    if (!PKCS5_PBKDF2_HMAC(password, strlen(password), saltbuf, salt_len, iterations, EVP_sha256(), AES_KEY_SIZE, key)) {
+                        fprintf(stderr, "PBKDF2 derivation failed.\n");
+                        fclose(in);
+                        return 1;
+                    }
+                } else if (use_legacy_kdf) {
+                derive_key(password, key);
+            }
         }
 
         uint16_t name_len16 = 0;
@@ -337,46 +472,6 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             output_placeholder = original_name;
         }
         legacy_mode = 0; /* explicit new format */
-
-    } else {
-        /* Not NEW_MAGIC; check for old HEADER (AAFv1) */
-        unsigned char header5[6] = {0};
-        memcpy(header5, header4, 4);
-        if (fread(&header5[4], 1, 1, in) != 1) {
-            /* could be legacy/no header */
-            rewind(in);
-            legacy_mode = 1;
-            memset(iv, 0, AES_BLOCK_SIZE);
-        } else if (memcmp(header5, OLD_HEADER, 5) == 0) {
-            /* AAFv1 old header */
-            if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
-                fprintf(stderr, "Failed to read IV from file.\n");
-                fclose(in);
-                return 1;
-            }
-            uint8_t name_len = 0;
-            if (fread(&name_len, 1, 1, in) != 1) {
-                fprintf(stderr, "Failed to read original filename length.\n");
-                fclose(in);
-                return 1;
-            }
-            if (name_len > 0) {
-                if (name_len >= sizeof(original_name)) name_len = sizeof(original_name) - 1;
-                if (fread(original_name, 1, name_len, in) != name_len) {
-                    fprintf(stderr, "Failed to read original filename.\n");
-                    fclose(in);
-                    return 1;
-                }
-                original_name[name_len] = '\0';
-                output_placeholder = original_name;
-            }
-            legacy_mode = 0; /* parsed old header */
-        } else {
-            /* No recognizable header -> legacy raw file */
-            rewind(in);
-            legacy_mode = 1;
-            memset(iv, 0, AES_BLOCK_SIZE);
-        }
     }
 
     FILE *out = fopen(output_placeholder, "wb");
