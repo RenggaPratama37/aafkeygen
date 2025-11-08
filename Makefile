@@ -6,13 +6,27 @@
 
 # --- Project info ---
 NAME        := aafkeygen
-VERSION     := 1.4.4
+BERSION     := 1.4.4
 BINARY      := $(NAME)
 SRC_DIR     := src
 BUILD_DIR   := build
-DEB_DIR     := $(NAME)_$(VERSION)
+ARCH ?= $(shell uname -m)
+
+# Normalize architecture names used for .deb naming
+DEB_ARCH := $(ARCH)
+ifeq ($(ARCH),x86_64)
+DEB_ARCH := amd64
+endif
+ifeq ($(ARCH),aarch64)
+DEB_ARCH := arm64
+endif
+
+BINARY      := $(NAME)
+SRC_DIR     := src
+BUILD_DIR   := build
+DEB_DIR     := $(NAME)_$(VERSION)_$(DEB_ARCH)
 PREFIX      := /usr/local
-CC          := gcc
+CC ?= gcc
 CFLAGS      := -Wall -O2
 LIBS        := -lcrypto
 
@@ -50,14 +64,19 @@ clean:
 
 # --- Build .deb package ---
 deb: $(BINARY)
-	@echo "Building Debian package..."
+	@echo "Building Debian package for arch: $(DEB_ARCH)"
 	mkdir -p $(DEB_DIR)/DEBIAN
 	mkdir -p $(DEB_DIR)/usr/bin
 	cp $(BINARY) $(DEB_DIR)/usr/bin/
 	cp debian/* $(DEB_DIR)/DEBIAN/
-	chmod 755 $(DEB_DIR)/DEBIAN/postinst
+	chmod 755 $(DEB_DIR)/DEBIAN/postinst || true
 	dpkg-deb --build $(DEB_DIR)
 	@echo "✅ Package built: $(DEB_DIR).deb"
+
+.PHONY: deb-arch
+deb-arch: $(BINARY)
+	@echo "Building .deb for ARCH=$(ARCH) (DEB_ARCH=$(DEB_ARCH))"
+	$(MAKE) deb
 
 # --- Help menu ---
 help:
