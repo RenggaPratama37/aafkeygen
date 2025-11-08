@@ -3,7 +3,6 @@
 #include <string.h>
 #include <unistd.h>
 #include "crypto.h"
-#include <time.h>
 #include <openssl/rand.h>
 #include "version.h"
 

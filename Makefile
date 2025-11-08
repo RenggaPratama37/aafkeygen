@@ -6,7 +6,7 @@
 
 # --- Project info ---
 NAME        := aafkeygen
-VERSION     := 1.4.1
+VERSION     := 1.4.2
 BINARY      := $(NAME)
 SRC_DIR     := src
 BUILD_DIR   := build

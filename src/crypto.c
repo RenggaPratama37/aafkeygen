@@ -10,10 +10,45 @@
 
 #define AES_KEY_SIZE 32
 #define AES_BLOCK_SIZE 16
-#define HEADER "AAFv1"
+#define OLD_HEADER "AAFv1"
+#define NEW_MAGIC "AAF4"
+#define NEW_FORMAT_VERSION 1
 
 static void derive_key(const char *password, unsigned char *key) {
     EVP_Digest(password, strlen(password), key, NULL, EVP_sha256(), NULL);
+}
+
+/* Helper to write big-endian integers */
+static int write_u16_be(FILE *f, uint16_t v) {
+    unsigned char b[2];
+    b[0] = (v >> 8) & 0xFF;
+    b[1] = v & 0xFF;
+    return fwrite(b, 1, 2, f) == 2;
+}
+
+static int write_u64_be(FILE *f, uint64_t v) {
+    unsigned char b[8];
+    for (int i = 0; i < 8; i++) b[7 - i] = (v >> (i * 8)) & 0xFF;
+    return fwrite(b, 1, 8, f) == 8;
+}
+
+/* Helper to read big-endian integers */
+static int read_u16_be(FILE *f, uint16_t *out) {
+    unsigned char b[2];
+    if (fread(b, 1, 2, f) != 2) return 0;
+    *out = ((uint16_t)b[0] << 8) | (uint16_t)b[1];
+    return 1;
+}
+
+static int read_u64_be(FILE *f, uint64_t *out) {
+    unsigned char b[8];
+    if (fread(b, 1, 8, f) != 8) return 0;
+    uint64_t v = 0;
+    for (int i = 0; i < 8; i++) {
+        v = (v << 8) | b[i];
+    }
+    *out = v;
+    return 1;
 }
 
 int encrypt_file(const char *input_file, const char *output_file, const char *password) {
@@ -35,15 +70,21 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
         return 1;
     }
 
-    size_t header_len = strlen(HEADER);
-    if (fwrite(HEADER, 1, header_len, out) != header_len) goto write_error;
-    if (fwrite(iv, 1, AES_BLOCK_SIZE, out) != AES_BLOCK_SIZE) goto write_error;
+    /* New format header (AAF4): magic(4) | version(1) | name_len(2) | timestamp(8) | IV(16) | name */
+    if (fwrite(NEW_MAGIC, 1, 4, out) != 4) goto write_error;
+    uint8_t fmt_ver = NEW_FORMAT_VERSION;
+    if (fwrite(&fmt_ver, 1, 1, out) != 1) goto write_error;
 
     size_t fnlen = strlen(input_file);
-    if (fnlen > 255) fnlen = 255; /* limit to fit into one byte */
-    uint8_t name_len = (uint8_t)fnlen;
-    if (fwrite(&name_len, 1, 1, out) != 1) goto write_error;
-    if (fwrite(input_file, 1, name_len, out) != name_len) goto write_error;
+    if (fnlen > 65535) fnlen = 65535;
+    uint16_t name_len16 = (uint16_t)fnlen;
+    if (!write_u16_be(out, name_len16)) goto write_error;
+
+    uint64_t ts = (uint64_t)time(NULL);
+    if (!write_u64_be(out, ts)) goto write_error;
+
+    if (fwrite(iv, 1, AES_BLOCK_SIZE, out) != AES_BLOCK_SIZE) goto write_error;
+    if (fwrite(input_file, 1, name_len16, out) != name_len16) goto write_error;
 
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
@@ -116,10 +157,8 @@ int inspect_file(const char *input_file) {
         return 1;
     }
 
-    unsigned char header[16] = {0};
-    size_t header_len = strlen(HEADER);
-    size_t read_bytes = fread(header, 1, header_len, in);
-
+    unsigned char header4[4] = {0};
+    size_t read4 = fread(header4, 1, 4, in);
     struct stat st;
     if (stat(input_file, &st) == -1) {
         perror("stat");
@@ -130,58 +169,116 @@ int inspect_file(const char *input_file) {
     printf("File: %s\n", input_file);
     printf("Size: %lld bytes\n", (long long)st.st_size);
 
-    if (read_bytes < header_len || strcmp((char *)header, HEADER) != 0) {
-        printf("Format: legacy (no header detected)\n");
-        /* For legacy files we can't reliably show IV/original name without parsing
-           the old assumptions (IV = zeros or implicit). We'll try to read a bit
-           but report limited info. */
-        printf("Note: legacy format uses zero IV by default or older behavior.\n");
-        fclose(in);
-        return 0;
-    }
-
-    printf("Format: %s\n", HEADER);
-
-    unsigned char iv[AES_BLOCK_SIZE];
-    if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
-        fprintf(stderr, "Failed to read IV.\n");
-        fclose(in);
-        return 1;
-    }
-
-    printf("IV: ");
-    for (int i = 0; i < AES_BLOCK_SIZE; i++) printf("%02x", iv[i]);
-    printf("\n");
-
-    uint8_t name_len = 0;
-    if (fread(&name_len, 1, 1, in) != 1) {
-        fprintf(stderr, "Failed to read name length.\n");
-        fclose(in);
-        return 1;
-    }
-
-    char original_name[256] = {0};
-    if (name_len > 0) {
-        if (name_len >= sizeof(original_name)) name_len = sizeof(original_name) - 1;
-        if (fread(original_name, 1, name_len, in) != name_len) {
-            fprintf(stderr, "Failed to read original filename.\n");
+    if (read4 == 4 && memcmp(header4, NEW_MAGIC, 4) == 0) {
+        printf("Format: %s (new)\n", NEW_MAGIC);
+        uint8_t fmt_ver = 0;
+        if (fread(&fmt_ver, 1, 1, in) != 1) {
+            fprintf(stderr, "Failed to read format version.\n");
             fclose(in);
             return 1;
         }
-        original_name[name_len] = '\0';
-        printf("Original filename: %s\n", original_name);
+        printf("Format version: %u\n", (unsigned)fmt_ver);
+
+        uint16_t name_len16 = 0;
+        if (!read_u16_be(in, &name_len16)) {
+            fprintf(stderr, "Failed to read name length.\n");
+            fclose(in);
+            return 1;
+        }
+
+        uint64_t ts = 0;
+        if (!read_u64_be(in, &ts)) {
+            fprintf(stderr, "Failed to read timestamp.\n");
+            fclose(in);
+            return 1;
+        }
+        printf("Timestamp (epoch): %llu\n", (unsigned long long)ts);
+
+        unsigned char iv[AES_BLOCK_SIZE];
+        if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
+            fprintf(stderr, "Failed to read IV.\n");
+            fclose(in);
+            return 1;
+        }
+        printf("IV: ");
+        for (int i = 0; i < AES_BLOCK_SIZE; i++) printf("%02x", iv[i]);
+        printf("\n");
+
+        char original_name[256] = {0};
+        if (name_len16 > 0) {
+            if (name_len16 >= sizeof(original_name)) name_len16 = sizeof(original_name) - 1;
+            if (fread(original_name, 1, name_len16, in) != name_len16) {
+                fprintf(stderr, "Failed to read original filename.\n");
+                fclose(in);
+                return 1;
+            }
+            original_name[name_len16] = '\0';
+            printf("Original filename: %s\n", original_name);
+        } else {
+            printf("Original filename: (none)\n");
+        }
+
+        long long header_bytes = 4 + 1 + 2 + 8 + AES_BLOCK_SIZE + name_len16;
+        long long cipher_bytes = (long long)st.st_size - header_bytes;
+        if (cipher_bytes < 0) cipher_bytes = 0;
+        printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
+
+        fclose(in);
+        return 0;
+
     } else {
-        printf("Original filename: (none)\n");
+        /* check old header */
+        unsigned char header5[6] = {0};
+        memcpy(header5, header4, 4);
+        if (fread(&header5[4], 1, 1, in) != 1) {
+            printf("Format: legacy (no header detected)\n");
+            printf("Note: legacy format uses zero IV by default or older behavior.\n");
+            fclose(in);
+            return 0;
+        }
+        if (memcmp(header5, OLD_HEADER, 5) == 0) {
+            printf("Format: %s (old)\n", OLD_HEADER);
+            unsigned char iv[AES_BLOCK_SIZE];
+            if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
+                fprintf(stderr, "Failed to read IV.\n");
+                fclose(in);
+                return 1;
+            }
+            printf("IV: ");
+            for (int i = 0; i < AES_BLOCK_SIZE; i++) printf("%02x", iv[i]);
+            printf("\n");
+            uint8_t name_len = 0;
+            if (fread(&name_len, 1, 1, in) != 1) {
+                fprintf(stderr, "Failed to read name length.\n");
+                fclose(in);
+                return 1;
+            }
+            char original_name[256] = {0};
+            if (name_len > 0) {
+                if (name_len >= sizeof(original_name)) name_len = sizeof(original_name) - 1;
+                if (fread(original_name, 1, name_len, in) != name_len) {
+                    fprintf(stderr, "Failed to read original filename.\n");
+                    fclose(in);
+                    return 1;
+                }
+                original_name[name_len] = '\0';
+                printf("Original filename: %s\n", original_name);
+            } else {
+                printf("Original filename: (none)\n");
+            }
+            long long header_bytes = 5 + AES_BLOCK_SIZE + 1 + name_len;
+            long long cipher_bytes = (long long)st.st_size - header_bytes;
+            if (cipher_bytes < 0) cipher_bytes = 0;
+            printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
+            fclose(in);
+            return 0;
+        } else {
+            printf("Format: legacy (no header detected)\n");
+            printf("Note: legacy format uses zero IV by default or older behavior.\n");
+            fclose(in);
+            return 0;
+        }
     }
-
-    /* ciphertext size approx = total size - header parts */
-    long long header_bytes = header_len + AES_BLOCK_SIZE + 1 + name_len;
-    long long cipher_bytes = (long long)st.st_size - header_bytes;
-    if (cipher_bytes < 0) cipher_bytes = 0;
-    printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
-
-    fclose(in);
-    return 0;
 }
 
 // === backward-compatible decrypt ===
@@ -195,39 +292,90 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
     unsigned char key[AES_KEY_SIZE], iv[AES_BLOCK_SIZE];
     derive_key(password, key);
 
-    size_t header_len = strlen(HEADER);
-    unsigned char header[16] = {0};
-    size_t read_bytes = fread(header, 1, header_len, in);
+    unsigned char header4[4] = {0};
+    size_t read4 = fread(header4, 1, 4, in);
 
     int legacy_mode = 0;
     char original_name[256] = {0};
-    if (read_bytes < header_len || strcmp((char *)header, HEADER) != 0) {
-        /* Old version (no header) */
-        legacy_mode = 1;
-        rewind(in);
-        memset(iv, 0, AES_BLOCK_SIZE); /* default IV (old behavior) */
-    } else {
+    if (read4 == 4 && memcmp(header4, NEW_MAGIC, 4) == 0) {
+        /* New AAF4 format */
+        uint8_t fmt_ver = 0;
+        if (fread(&fmt_ver, 1, 1, in) != 1) {
+            fprintf(stderr, "Failed to read format version.\n");
+            fclose(in);
+            return 1;
+        }
+
+        uint16_t name_len16 = 0;
+        if (!read_u16_be(in, &name_len16)) {
+            fprintf(stderr, "Failed to read name length.\n");
+            fclose(in);
+            return 1;
+        }
+
+        uint64_t ts = 0;
+        if (!read_u64_be(in, &ts)) {
+            fprintf(stderr, "Failed to read timestamp.\n");
+            fclose(in);
+            return 1;
+        }
+
         if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
             fprintf(stderr, "Failed to read IV from file.\n");
             fclose(in);
             return 1;
         }
 
-        uint8_t name_len = 0;
-        if (fread(&name_len, 1, 1, in) != 1) {
-            fprintf(stderr, "Failed to read original filename length.\n");
-            fclose(in);
-            return 1;
-        }
-        if (name_len > 0) {
-            if (name_len >= sizeof(original_name)) name_len = sizeof(original_name) - 1;
-            if (fread(original_name, 1, name_len, in) != name_len) {
+        if (name_len16 > 0) {
+            if (name_len16 >= sizeof(original_name)) name_len16 = sizeof(original_name) - 1;
+            if (fread(original_name, 1, name_len16, in) != name_len16) {
                 fprintf(stderr, "Failed to read original filename.\n");
                 fclose(in);
                 return 1;
             }
-            original_name[name_len] = '\0';
+            original_name[name_len16] = '\0';
             output_placeholder = original_name;
+        }
+        legacy_mode = 0; /* explicit new format */
+
+    } else {
+        /* Not NEW_MAGIC; check for old HEADER (AAFv1) */
+        unsigned char header5[6] = {0};
+        memcpy(header5, header4, 4);
+        if (fread(&header5[4], 1, 1, in) != 1) {
+            /* could be legacy/no header */
+            rewind(in);
+            legacy_mode = 1;
+            memset(iv, 0, AES_BLOCK_SIZE);
+        } else if (memcmp(header5, OLD_HEADER, 5) == 0) {
+            /* AAFv1 old header */
+            if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
+                fprintf(stderr, "Failed to read IV from file.\n");
+                fclose(in);
+                return 1;
+            }
+            uint8_t name_len = 0;
+            if (fread(&name_len, 1, 1, in) != 1) {
+                fprintf(stderr, "Failed to read original filename length.\n");
+                fclose(in);
+                return 1;
+            }
+            if (name_len > 0) {
+                if (name_len >= sizeof(original_name)) name_len = sizeof(original_name) - 1;
+                if (fread(original_name, 1, name_len, in) != name_len) {
+                    fprintf(stderr, "Failed to read original filename.\n");
+                    fclose(in);
+                    return 1;
+                }
+                original_name[name_len] = '\0';
+                output_placeholder = original_name;
+            }
+            legacy_mode = 0; /* parsed old header */
+        } else {
+            /* No recognizable header -> legacy raw file */
+            rewind(in);
+            legacy_mode = 1;
+            memset(iv, 0, AES_BLOCK_SIZE);
         }
     }
 
