@@ -2,8 +2,8 @@ Package: aafkeygen
 Version: 1.4.4
 Section: utils
 Priority: optional
-Architecture: amd64
-Depends: libssl-dev, libc6
+Architecture: all
+Depends: libc6, libssl3
 Maintainer: Rengga Rona Pratama <renggaronapratama@gmail.com>
 Description: AAFKeygen - Authenticated Access File encryptor for Linux
  Command-line encryption tool using AES-256 with password-based key derivation.

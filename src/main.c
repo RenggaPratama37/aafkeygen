@@ -43,6 +43,8 @@ int main(int argc, char *argv[]) {
     int encrypt = 0, decrypt = 0, keep = 0, random_name = 0;
     int legacy_flag = 0;
     uint32_t iterations_flag = 0;
+    int aead_flag = 0; /* 0 = not specified -> default AEAD */
+    const char *aead_name = NULL;
 
     /* exportable globals for crypto module (set before calling encrypt/decrypt) */
     extern uint32_t pbkdf2_iterations;
@@ -86,6 +88,12 @@ int main(int argc, char *argv[]) {
             iterations_flag = (uint32_t)atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--legacy")) {
             legacy_flag = 1;
+        } else if (!strcmp(argv[i], "--aead")) {
+            if (i + 1 >= argc) { print_help(); return 1; }
+            aead_flag = 1;
+            aead_name = argv[++i];
+        } else if (!strcmp(argv[i], "--force-aead")) {
+            aead_flag = 1; aead_name = "gcm"; /* force default AEAD */
         }
     }
 
@@ -108,11 +116,16 @@ int main(int argc, char *argv[]) {
         }
 
         printf("[+] Encrypting '%s' → '%s'\n", input_file, output_file);
-    /* export iteration and legacy flags to crypto module globals */
-    extern uint32_t pbkdf2_iterations;
-    extern int use_legacy_kdf;
-    pbkdf2_iterations = iterations_flag;
-    use_legacy_kdf = legacy_flag;
+        /* export iteration, legacy and aead flags to crypto module globals */
+        extern uint32_t pbkdf2_iterations;
+        extern int use_legacy_kdf;
+        extern int selected_aead;
+        pbkdf2_iterations = iterations_flag;
+        use_legacy_kdf = legacy_flag;
+        if (aead_flag && aead_name) {
+            if (!strcmp(aead_name, "gcm")) selected_aead = AEAD_AES_256_GCM;
+            else if (!strcmp(aead_name, "chacha20")) selected_aead = AEAD_CHACHA20_POLY1305;
+        }
         if (encrypt_file(input_file, output_file, password) == 0) {
             printf("✅ Encryption complete: %s\n", output_file);
             if (!keep) {
