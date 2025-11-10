@@ -9,6 +9,16 @@
 #include <sys/stat.h>
 #include <openssl/evp.h>
 
+/* Silence direct printing from this module so crypto becomes a pure engine.
+ * The main program (or other frontends) should handle user-facing output.
+ */
+#undef printf
+#undef fprintf
+#undef perror
+#define printf(...) ((void)0)
+#define fprintf(...) ((void)0)
+#define perror(...) ((void)0)
+
 #define AES_KEY_SIZE 32
 #define AES_BLOCK_SIZE 16
 #define OLD_HEADER "AAFv1"
@@ -76,7 +86,6 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
     FILE *in = fopen(input_file, "rb");
     FILE *out = fopen(output_file, "wb");
     if (!in || !out) {
-        perror("File error");
         if (in) fclose(in);
         if (out) fclose(out);
         return 1;
@@ -273,202 +282,20 @@ enc_fail:
  * information like whether the header exists, IV bytes and original filename.
  */
 int inspect_file(const char *input_file) {
-    FILE *in = fopen(input_file, "rb");
-    if (!in) {
-        perror("File error");
-        return 1;
-    }
-
-    unsigned char header4[4] = {0};
-    size_t read4 = fread(header4, 1, 4, in);
-    struct stat st;
-    if (stat(input_file, &st) == -1) {
-        perror("stat");
-        fclose(in);
-        return 1;
-    }
-
-    printf("File: %s\n", input_file);
-    printf("Size: %lld bytes\n", (long long)st.st_size);
-
-    if (read4 == 4 && memcmp(header4, NEW_MAGIC, 4) == 0) {
-        printf("Format: %s (new)\n", NEW_MAGIC);
-        uint8_t fmt_ver = 0;
-        if (fread(&fmt_ver, 1, 1, in) != 1) {
-            fprintf(stderr, "Failed to read format version.\n");
-            fclose(in);
-            return 1;
-        }
-        printf("Format version: %u\n", (unsigned)fmt_ver);
-
-        /* Newer format (v2+) includes KDF metadata */
-        uint8_t kdf_id = 0;
-        uint8_t salt_len = 0;
-        uint32_t iterations = 0;
-        if (fmt_ver >= 2) {
-            if (fread(&kdf_id, 1, 1, in) != 1) {
-                fprintf(stderr, "Failed to read kdf id.\n");
-                fclose(in);
-                return 1;
-            }
-            if (fread(&salt_len, 1, 1, in) != 1) {
-                fprintf(stderr, "Failed to read salt length.\n");
-                fclose(in);
-                return 1;
-            }
-            unsigned char saltbuf[256];
-            if (salt_len > 0) {
-                    if ((int)salt_len > (int)(sizeof(saltbuf) - 1)) salt_len = (uint8_t)(sizeof(saltbuf) - 1);
-                if (fread(saltbuf, 1, salt_len, in) != salt_len) {
-                    fprintf(stderr, "Failed to read salt.\n");
-                    fclose(in);
-                    return 1;
-                }
-                printf("KDF: %s\n", kdf_id == KDF_PBKDF2_HMAC_SHA256 ? "PBKDF2-HMAC-SHA256" : "unknown");
-                printf("Salt: "); for (int i=0;i<salt_len;i++) printf("%02x", saltbuf[i]); printf("\n");
-            }
-            unsigned char itb[4];
-            if (fread(itb, 1, 4, in) != 4) {
-                fprintf(stderr, "Failed to read iterations.\n");
-                fclose(in);
-                return 1;
-            }
-            iterations = ((uint32_t)itb[0] << 24) | ((uint32_t)itb[1] << 16) | ((uint32_t)itb[2] << 8) | (uint32_t)itb[3];
-            printf("Iterations: %u\n", iterations);
-        }
-
-        /* Read AEAD id and IV length (v2+) */
-        uint8_t aead_id = AEAD_NONE;
-        uint8_t iv_len = AES_BLOCK_SIZE;
-        if (fmt_ver >= 2) {
-            if (fread(&aead_id, 1, 1, in) != 1) {
-                fprintf(stderr, "Failed to read AEAD id.\n");
-                fclose(in);
-                return 1;
-            }
-            if (fread(&iv_len, 1, 1, in) != 1) {
-                fprintf(stderr, "Failed to read IV length.\n");
-                fclose(in);
-                return 1;
-            }
-            printf("AEAD: %s\n", aead_id == AEAD_AES_256_GCM ? "AES-256-GCM" : (aead_id == AEAD_CHACHA20_POLY1305 ? "ChaCha20-Poly1305" : "unknown"));
-            printf("IV length: %u\n", (unsigned)iv_len);
-        }
-
-        uint16_t name_len16 = 0;
-        if (!read_u16_be(in, &name_len16)) {
-            fprintf(stderr, "Failed to read name length.\n");
-            fclose(in);
-            return 1;
-        }
-
-        uint64_t ts = 0;
-        if (!read_u64_be(in, &ts)) {
-            fprintf(stderr, "Failed to read timestamp.\n");
-            fclose(in);
-            return 1;
-        }
-        printf("Timestamp (epoch): %llu\n", (unsigned long long)ts);
-
-        unsigned char ivbuf[64];
-        if (iv_len > sizeof(ivbuf)) {
-            fprintf(stderr, "IV length too large.\n");
-            fclose(in);
-            return 1;
-        }
-        if (fread(ivbuf, 1, iv_len, in) != iv_len) {
-            fprintf(stderr, "Failed to read IV.\n");
-            fclose(in);
-            return 1;
-        }
-        printf("IV: ");
-        for (unsigned i = 0; i < iv_len; i++) printf("%02x", ivbuf[i]);
-        printf("\n");
-
-        char original_name[256] = {0};
-        if (name_len16 > 0) {
-            if (name_len16 >= sizeof(original_name)) name_len16 = sizeof(original_name) - 1;
-            if (fread(original_name, 1, name_len16, in) != name_len16) {
-                fprintf(stderr, "Failed to read original filename.\n");
-                fclose(in);
-                return 1;
-            }
-            original_name[name_len16] = '\0';
-            printf("Original filename: %s\n", original_name);
-        } else {
-            printf("Original filename: (none)\n");
-        }
-
-        long long header_bytes = 4 + 1; /* magic + fmt */
-        if (fmt_ver >= 2) header_bytes += 1 + 1 + (long long)salt_len + 4 + 1 + 1; /* kdf_id + salt_len + salt + iterations + aead_id + iv_len */
-        header_bytes += 2 + 8 + iv_len + name_len16;
-        long long cipher_bytes = (long long)st.st_size - header_bytes;
-        if (cipher_bytes < 0) cipher_bytes = 0;
-        printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
-
-        fclose(in);
-        return 0;
-
-    } else {
-        /* check old header */
-        unsigned char header5[6] = {0};
-        memcpy(header5, header4, 4);
-        if (fread(&header5[4], 1, 1, in) != 1) {
-            printf("Format: legacy (no header detected)\n");
-            printf("Note: legacy format uses zero IV by default or older behavior.\n");
-            fclose(in);
-            return 0;
-        }
-        if (memcmp(header5, OLD_HEADER, 5) == 0) {
-            printf("Format: %s (old)\n", OLD_HEADER);
-            unsigned char iv[AES_BLOCK_SIZE];
-            if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
-                fprintf(stderr, "Failed to read IV.\n");
-                fclose(in);
-                return 1;
-            }
-            printf("IV: ");
-            for (int i = 0; i < AES_BLOCK_SIZE; i++) printf("%02x", iv[i]);
-            printf("\n");
-            uint8_t name_len = 0;
-            if (fread(&name_len, 1, 1, in) != 1) {
-                fprintf(stderr, "Failed to read name length.\n");
-                fclose(in);
-                return 1;
-            }
-            char original_name[256] = {0};
-            if (name_len > 0) {
-                if (name_len >= sizeof(original_name)) name_len = sizeof(original_name) - 1;
-                if (fread(original_name, 1, name_len, in) != name_len) {
-                    fprintf(stderr, "Failed to read original filename.\n");
-                    fclose(in);
-                    return 1;
-                }
-                original_name[name_len] = '\0';
-                printf("Original filename: %s\n", original_name);
-            } else {
-                printf("Original filename: (none)\n");
-            }
-            long long header_bytes = 5 + AES_BLOCK_SIZE + 1 + name_len;
-            long long cipher_bytes = (long long)st.st_size - header_bytes;
-            if (cipher_bytes < 0) cipher_bytes = 0;
-            printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
-            fclose(in);
-            return 0;
-        } else {
-            printf("Format: legacy (no header detected)\n");
-            printf("Note: legacy format uses zero IV by default or older behavior.\n");
-            fclose(in);
-            return 0;
-        }
-    }
+    /* Deprecated: inspect_file printed header info. Use parse_header() instead.
+     * To preserve compatibility with other callers, we implement inspect_file
+     * as a small wrapper that calls parse_header and returns an exit code.
+     */
+    aaf_header_t hdr;
+    int r = parse_header(input_file, &hdr);
+    if (r != 0) return 1;
+    return 0;
 }
 
 // === backward-compatible decrypt ===
 int decrypt_file(const char *input_file, const char *output_placeholder, const char *password) {
     FILE *in = fopen(input_file, "rb");
     if (!in) {
-        perror("File error");
         return 1;
     }
 
@@ -591,14 +418,18 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 return 1;
             }
             original_name[name_len16] = '\0';
-            output_placeholder = original_name;
         }
         legacy_mode = 0; /* explicit new format */
     }
 
-    FILE *out = fopen(output_placeholder, "wb");
+    /* decide final output path: prefer caller-provided, otherwise use original name from header */
+    const char *final_output = output_placeholder;
+    if (!final_output || final_output[0] == '\0') {
+        if (original_name[0]) final_output = original_name;
+        else final_output = input_file; /* fallback to input filename (without .aaf handled by caller) */
+    }
+    FILE *out = fopen(final_output, "wb");
     if (!out) {
-        perror("Output file error");
         fclose(in);
         return 1;
     }
@@ -688,7 +519,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 EVP_CIPHER_CTX_free(ctx);
                 fclose(in);
                 fclose(out);
-                unlink(output_placeholder);
+                unlink(final_output);
                 OPENSSL_cleanse(key, sizeof(key));
                 return 1;
             }
@@ -697,7 +528,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 EVP_CIPHER_CTX_free(ctx);
                 fclose(in);
                 fclose(out);
-                unlink(output_placeholder);
+                unlink(final_output);
                 OPENSSL_cleanse(key, sizeof(key));
                 return 1;
             }
@@ -711,7 +542,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             EVP_CIPHER_CTX_free(ctx);
             fclose(in);
             fclose(out);
-            unlink(output_placeholder);
+            unlink(final_output);
             OPENSSL_cleanse(key, sizeof(key));
             return 1;
         }
@@ -720,7 +551,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             EVP_CIPHER_CTX_free(ctx);
             fclose(in);
             fclose(out);
-            unlink(output_placeholder);
+            unlink(final_output);
             OPENSSL_cleanse(key, sizeof(key));
             return 1;
         }
@@ -730,7 +561,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             EVP_CIPHER_CTX_free(ctx);
             fclose(in);
             fclose(out);
-            unlink(output_placeholder);
+            unlink(final_output);
             OPENSSL_cleanse(key, sizeof(key));
             return 1;
         }
@@ -790,7 +621,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             EVP_CIPHER_CTX_free(ctx);
             fclose(in);
             fclose(out);
-            unlink(output_placeholder);
+            unlink(final_output);
             OPENSSL_cleanse(key, sizeof(key));
             return 1;
         }
@@ -813,6 +644,105 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
            output_placeholder ? output_placeholder : "(unknown)",
            legacy_mode ? "legacy" : "v1.4");
     return 0;
+}
+
+/* parse_header: non-printing parser that fills aaf_header_t from an AAF file.
+ * Returns 0 on success, non-zero on failure.
+ */
+int parse_header(const char *input_file, aaf_header_t *out) {
+    if (!out) return 1;
+    memset(out, 0, sizeof(*out));
+
+    FILE *in = fopen(input_file, "rb");
+    if (!in) return 1;
+
+    unsigned char header4[4] = {0};
+    if (fread(header4, 1, 4, in) != 4) { fclose(in); return 1; }
+
+    if (memcmp(header4, NEW_MAGIC, 4) == 0) {
+        memcpy(out->magic, NEW_MAGIC, 4);
+        out->magic[4] = '\0';
+        uint8_t fmt_ver = 0;
+        if (fread(&fmt_ver, 1, 1, in) != 1) { fclose(in); return 1; }
+        out->fmt_ver = fmt_ver;
+
+        if (fmt_ver >= 2) {
+            if (fread(&out->kdf_id, 1, 1, in) != 1) { fclose(in); return 1; }
+            if (fread(&out->salt_len, 1, 1, in) != 1) { fclose(in); return 1; }
+            if (out->salt_len > 0) {
+                if (out->salt_len > MAX_SALT_LEN) {
+                    /* truncate if header has larger salt than we support */
+                    if (fseek(in, out->salt_len, SEEK_CUR) != 0) { fclose(in); return 1; }
+                } else {
+                    if (fread(out->salt, 1, out->salt_len, in) != out->salt_len) { fclose(in); return 1; }
+                }
+            }
+            unsigned char itb[4];
+            if (fread(itb, 1, 4, in) != 4) { fclose(in); return 1; }
+            out->iterations = ((uint32_t)itb[0] << 24) | ((uint32_t)itb[1] << 16) | ((uint32_t)itb[2] << 8) | (uint32_t)itb[3];
+        }
+
+        if (fmt_ver >= 2) {
+            if (fread(&out->aead_id, 1, 1, in) != 1) { fclose(in); return 1; }
+            if (fread(&out->iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
+        } else {
+            out->aead_id = AEAD_NONE;
+            out->iv_len = AES_BLOCK_SIZE;
+        }
+
+        if (!read_u16_be(in, &out->name_len)) { fclose(in); return 1; }
+        if (!read_u64_be(in, &out->timestamp)) { fclose(in); return 1; }
+
+        if (out->iv_len > AES_BLOCK_SIZE) {
+            /* skip IV if larger than buffer (shouldn't happen) */
+            if (fseek(in, out->iv_len, SEEK_CUR) != 0) { fclose(in); return 1; }
+        } else {
+            if (fseek(in, out->iv_len, SEEK_CUR) != 0) { fclose(in); return 1; }
+        }
+
+        if (out->name_len > 0) {
+            uint16_t nl = out->name_len;
+            if (nl >= sizeof(out->original_name)) nl = sizeof(out->original_name) - 1;
+            if (fread(out->original_name, 1, nl, in) != nl) { fclose(in); return 1; }
+            out->original_name[nl] = '\0';
+        }
+
+        /* compute header bytes size approximately */
+        out->header_bytes = 4 + 1; /* magic + fmt */
+        if (out->fmt_ver >= 2) out->header_bytes += 1 + 1 + out->salt_len + 4 + 1 + 1; /* kdf_id + salt_len + salt + iterations + aead_id + iv_len */
+        out->header_bytes += 2 + 8 + out->iv_len + out->name_len;
+
+        fclose(in);
+        return 0;
+    } else {
+        /* legacy header detection: read one more byte and compare to OLD_HEADER (5 bytes) */
+        unsigned char c = 0;
+        if (fread(&c, 1, 1, in) != 1) { fclose(in); return 1; }
+        unsigned char header5[6];
+        memcpy(header5, header4, 4);
+        header5[4] = c;
+        header5[5] = '\0';
+        if (memcmp(header5, OLD_HEADER, 5) == 0) {
+            out->fmt_ver = 1;
+            /* read IV */
+            unsigned char iv[AES_BLOCK_SIZE];
+            if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) { fclose(in); return 1; }
+            uint8_t name_len = 0;
+            if (fread(&name_len, 1, 1, in) != 1) { fclose(in); return 1; }
+            if (name_len > 0) {
+                uint8_t nl = name_len;
+                if (nl >= sizeof(out->original_name)) nl = sizeof(out->original_name) - 1;
+                if (fread(out->original_name, 1, nl, in) != nl) { fclose(in); return 1; }
+                out->original_name[nl] = '\0';
+                out->name_len = nl;
+            }
+            out->header_bytes = 5 + AES_BLOCK_SIZE + 1 + out->name_len;
+            fclose(in);
+            return 0;
+        }
+        fclose(in);
+        return 1; /* unknown/unsupported format */
+    }
 }
 
 /* Encrypt helper that allows specifying the original filename stored in the header
@@ -942,5 +872,12 @@ enc_fail2:
 }
 
 
-/* temp_decrypt_and_open moved to src/temp.c to keep crypto.c engine-only.
- * See src/temp.c for the implementation. */
+/* temp_decrypt_and_open: simple prompt-based temporary decryption.
+ * - decrypts the AAF into a secure temp file using the original filename
+ *   stored in the header (if present)
+ * - opens the temp file with xdg-open and prompts the user to press ENTER
+ *   when done
+ * - re-encrypts the temp file back into the original .aaf (overwriting)
+ * - securely unlinks the temp file
+ */
+/* temp_decrypt_and_open has been moved to src/temp.c for modularity. */
