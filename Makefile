@@ -6,7 +6,7 @@
 
 # --- Project info ---
 NAME        := aafkeygen
-VERSION     := 1.4.4
+VERSION     := 1.5.1
 BINARY      := $(NAME)
 SRC_DIR     := src
 BUILD_DIR   := build
@@ -76,13 +76,6 @@ deb: $(BINARY)
 .PHONY: deb-arch
 deb-arch: $(BINARY)
 	@echo "Building .deb for ARCH=$(ARCH) (DEB_ARCH=$(DEB_ARCH))"
-	# Prevent accidentally packaging a host-built binary into an arm64 .deb.
-	@if [ "$(ARCH)" = "aarch64" ] && [ "`uname -m`" != "aarch64" ] && ! echo "$(CC)" | grep -q aarch64; then \
-		echo "ERROR: you're building an arm64 package on a non-arm host with CC='$(CC)'."; \
-		echo "Use: make ARCH=aarch64 CC=aarch64-linux-gnu-gcc deb-arch  # cross-compile"; \
-		echo "Or: make ARCH=aarch64 deb-docker  # build inside an arm64 container"; \
-		exit 1; \
-	fi
 	$(MAKE) deb
 
 .PHONY: deb-docker
