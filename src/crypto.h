@@ -14,6 +14,8 @@
 int encrypt_file(const char *input_file, const char *output_file, const char *password);
 int decrypt_file(const char *input_file, const char *output_file, const char *password);
 int inspect_file(const char *input_file);
+int temp_decrypt_and_open(const char *aaf_path, const char *password);
+int encrypt_file_with_name(const char *input_file, const char *output_file, const char *password, const char *header_name);
 /* Globals controlled by main.c to influence KDF behavior */
 extern uint32_t pbkdf2_iterations;
 extern int use_legacy_kdf;
