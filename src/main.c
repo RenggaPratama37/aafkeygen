@@ -19,6 +19,7 @@ void print_help() {
     printf("  -o, --output <name>        Custom output file name\n");
     printf("  -r, --random-name          Generate random output filename\n");
     printf("      --keep                 Keep original file after operation\n");
+    printf("      --temp-decrypt         Decrypt to a secure temp file, open with default viewer, re-encrypt after close (prompt-based)\n");
     printf("  -h, --help                 Show this message\n");
 }
 
@@ -94,6 +95,11 @@ int main(int argc, char *argv[]) {
             aead_name = argv[++i];
         } else if (!strcmp(argv[i], "--force-aead")) {
             aead_flag = 1; aead_name = "gcm"; /* force default AEAD */
+        } else if (!strcmp(argv[i], "--temp-decrypt")) {
+            /* temporary decrypt & open */
+            decrypt = 1; /* treat as decrypt but handled specially below */
+            /* mark a special flag via random_name variable to indicate temp mode */
+            random_name = 2; /* 2 = temp-decrypt mode */
         }
     }
 
@@ -145,15 +151,28 @@ int main(int argc, char *argv[]) {
         if (dot) *dot = '\0';
         if (!output_file) output_file = default_output;
 
-        printf("[+] Decrypting '%s' → '%s'\n", input_file, output_file);
-        if (decrypt_file(input_file, output_file, password) == 0) {
-            printf("✅ Decryption complete: %s\n", output_file);
-            if (!keep) {
-                remove(input_file);
-                printf("[–] Encrypted file deleted.\n");
+        /* temp-decrypt mode (simple prompt-based) when random_name==2 */
+        if (random_name == 2) {
+            printf("[+] Temp-decrypting and opening '%s'\n", input_file);
+            if (temp_decrypt_and_open(input_file, password) == 0) {
+                if (!keep) {
+                    remove(input_file);
+                    printf("[–] Encrypted file deleted.\n");
+                }
+            } else {
+                fprintf(stderr, "[x] Temp-decrypt failed.\n");
             }
         } else {
-            fprintf(stderr, "[x] Decryption failed.\n");
+            printf("[+] Decrypting '%s' → '%s'\n", input_file, output_file);
+            if (decrypt_file(input_file, output_file, password) == 0) {
+                printf("✅ Decryption complete: %s\n", output_file);
+                if (!keep) {
+                    remove(input_file);
+                    printf("[–] Encrypted file deleted.\n");
+                }
+            } else {
+                fprintf(stderr, "[x] Decryption failed.\n");
+            }
         }
     }
 
