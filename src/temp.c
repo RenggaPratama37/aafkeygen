@@ -98,7 +98,12 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     printf("[+] Opened temporary file: %s\n", temp_path);
     pid_t pid = fork();
     if (pid == 0) {
+        const char *prefix = getenv("PREFIX");
+        if (prefix && strstr(prefix, "com.termux")){
+            execlp("termux-open", "termux-open", temp_path, (char *)NULL);
+        }
         execlp("xdg-open", "xdg-open", temp_path, (char *)NULL);
+        fprintf(stderr, "No suitable opener found\n");
         _exit(1);
     } else if (pid < 0) {
         perror("fork");
