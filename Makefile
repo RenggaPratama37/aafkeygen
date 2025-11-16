@@ -8,8 +8,11 @@
 NAME        := aafkeygen
 VERSION     := 1.5.3
 BINARY      := $(NAME)
+
 SRC_DIR     := src
+INC_DIR     := include
 BUILD_DIR   := build
+
 ARCH ?= $(shell uname -m)
 
 # Normalize architecture names used for .deb naming
@@ -21,18 +24,19 @@ ifeq ($(ARCH),aarch64)
 DEB_ARCH := arm64
 endif
 
-BINARY      := $(NAME)
-SRC_DIR     := src
-BUILD_DIR   := build
 DEB_DIR     := $(NAME)_$(VERSION)_$(DEB_ARCH)
 PREFIX      := /usr/local
+
 CC ?= gcc
-CFLAGS      := -Wall -O2
+
+# Add include directory + auto header dependency
+CFLAGS      := -Wall -O2 -I$(INC_DIR) -MMD -MP
 LIBS        := -lcrypto
 
 # --- Source files ---
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
+DEPS := $(OBJS:.o=.d)
 
 # --- Default rule ---
 all: $(BINARY)
@@ -42,12 +46,15 @@ $(BINARY): $(OBJS)
 	@echo "Linking $(BINARY)..."
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
+# --- Object build rule ---
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(BUILD_DIR)
 	@echo "Compiling $< ..."
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# --- Install binary to system ---
+-include $(DEPS)
+
+# --- Install binary ---
 install: $(BINARY)
 	@echo "Installing $(BINARY) to $(PREFIX)/bin ..."
 	sudo install -Dm755 $(BINARY) $(PREFIX)/bin/$(BINARY)
@@ -57,7 +64,7 @@ uninstall:
 	@echo "Removing $(BINARY) from system..."
 	sudo rm -f $(PREFIX)/bin/$(BINARY)
 
-# --- Clean build artifacts ---
+# --- Clean build ---
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf $(BUILD_DIR) $(BINARY) $(DEB_DIR) *.deb
