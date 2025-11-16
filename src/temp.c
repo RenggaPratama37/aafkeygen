@@ -79,8 +79,11 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
 
     /* decrypt into a work output name (decrypt_file tends to use header name); */
     char work_output[512];
-    if (original_name[0]) snprintf(work_output, sizeof(work_output), "%s", original_name);
-    else snprintf(work_output, sizeof(work_output), "%s/aaf_plain_%d", tmpdir, (int)getpid());
+    if (original_name[0]){
+        snprintf(work_output, sizeof(work_output), "%s", original_name);
+    } else {
+        snprintf(work_output, sizeof(work_output), "aaf_plain_%d", (int)getpid());
+    }
 
     if (decrypt_file(aaf_path, work_output, password) != 0) {
         fprintf(stderr, "Decryption failed\n");
@@ -90,7 +93,18 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
 
     if (rename(work_output, temp_path) != 0) {
         perror("rename to temp path failed");
-        strncpy(temp_path, work_output, sizeof(temp_path)-1);
+        FILE *src = fopen(work_output,"rb");
+        FILE *dst = fopen(temp_path, "wb");
+        if (src && dst){
+            char buf[8192];
+            size_t r;
+            while((r = fread(buf,1,sizeof(buf),src))>0){
+                fwrite(buf, 1, r, dst);
+            }
+        }
+        if(src) fclose(src);
+        if(dst) fclose(dst);
+        unlink(work_output);
     }
 
     chmod(temp_path, S_IRUSR | S_IWUSR);
@@ -145,7 +159,6 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
         fclose(tf);
     }
     unlink(temp_path);
-    rmdir(tmpdir);
 
     printf("✅ Temp view complete; file re-encrypted and plaintext removed.\n");
     return 0;
