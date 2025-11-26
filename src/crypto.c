@@ -38,7 +38,6 @@
 #define GCM_TAG_LEN 16
 
 
-
 /* Globals controlled by main.c */
 /* Globals controlled by main.c */
 unsigned int pbkdf2_iterations = 0;
@@ -162,7 +161,7 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
         goto write_error;
     }
 
-    unsigned char inbuf[1024], outbuf[1040];
+    unsigned char inbuf[4096], outbuf[4128];
     int inlen, outlen;
 
     if (aead == AEAD_AES_256_GCM) {
@@ -259,6 +258,7 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
     fclose(in);
     fclose(out);
     OPENSSL_cleanse(key, sizeof(key));
+    OPENSSL_cleanse(iv, sizeof(iv));
     return 0;
 
 write_error:
@@ -267,6 +267,7 @@ write_error:
     fclose(out);
     unlink(output_file);
     OPENSSL_cleanse(key, sizeof(key));
+    OPENSSL_cleanse(iv, sizeof(iv));
     return 1;
 
 enc_fail:
@@ -274,6 +275,7 @@ enc_fail:
     fclose(out);
     unlink(output_file);
     OPENSSL_cleanse(key, sizeof(key));
+    OPENSSL_cleanse(iv, sizeof(iv));
     return 1;
 }
 
@@ -326,7 +328,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
         /* handle KDF metadata for version >= 2 */
         uint8_t kdf_id = KDF_NONE;
         uint8_t salt_len = 0;
-        unsigned char saltbuf[256];
+        unsigned char saltbuf[MAX_SALT_LEN];
         uint32_t iterations = 0;
         if (fmt_ver >= 2) {
             if (fread(&kdf_id, 1, 1, in) != 1) {
@@ -340,7 +342,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 return 1;
             }
             if (salt_len > 0) {
-                if ((int)salt_len > (int)(sizeof(saltbuf) - 1)) salt_len = (uint8_t)(sizeof(saltbuf) - 1);
+                 if ((size_t)salt_len > sizeof(saltbuf)) salt_len = (uint8_t)sizeof(saltbuf);
                 if (fread(saltbuf, 1, salt_len, in) != salt_len) {
                     fprintf(stderr, "Failed to read salt.\n");
                     fclose(in);
@@ -396,14 +398,12 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             return 1;
         }
 
-        if (iv_len > AES_BLOCK_SIZE) {
-            /* support iv_len up to our buffer size */
-            if (iv_len > sizeof(iv)) {
-                fprintf(stderr, "IV length too large.\n");
-                fclose(in);
-                return 1;
-            }
+        if (iv_len > sizeof(iv)) {
+            fprintf(stderr, "IV length too large.\n");
+            fclose(in);
+            return 1;
         }
+
         if (fread(iv, 1, iv_len, in) != iv_len) {
             fprintf(stderr, "Failed to read IV from file.\n");
             fclose(in);
@@ -521,6 +521,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 fclose(out);
                 unlink(final_output);
                 OPENSSL_cleanse(key, sizeof(key));
+                OPENSSL_cleanse(iv,sizeof(iv));
                 return 1;
             }
             if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
@@ -530,6 +531,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 fclose(out);
                 unlink(final_output);
                 OPENSSL_cleanse(key, sizeof(key));
+                OPENSSL_cleanse(iv,sizeof(iv));
                 return 1;
             }
             remaining -= inlen;
@@ -544,6 +546,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             fclose(out);
             unlink(final_output);
             OPENSSL_cleanse(key, sizeof(key));
+            OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
         }
         if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, GCM_TAG_LEN, tag) != 1) {
@@ -553,6 +556,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             fclose(out);
             unlink(final_output);
             OPENSSL_cleanse(key, sizeof(key));
+            OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
         }
 
@@ -563,6 +567,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             fclose(out);
             unlink(final_output);
             OPENSSL_cleanse(key, sizeof(key));
+            OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
         }
         if (outlen > 0) {
@@ -573,6 +578,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 fclose(out);
                 unlink(output_placeholder);
                 OPENSSL_cleanse(key, sizeof(key));
+                OPENSSL_cleanse(iv, sizeof(iv));
                 return 1;
             }
         }
@@ -603,6 +609,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 fclose(out);
                 unlink(output_placeholder);
                 OPENSSL_cleanse(key, sizeof(key));
+                OPENSSL_cleanse(iv, sizeof(iv));
                 return 1;
             }
             if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
@@ -612,6 +619,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
                 fclose(out);
                 unlink(output_placeholder);
                 OPENSSL_cleanse(key, sizeof(key));
+                OPENSSL_cleanse(iv, sizeof(iv));
                 return 1;
             }
         }
@@ -623,6 +631,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             fclose(out);
             unlink(final_output);
             OPENSSL_cleanse(key, sizeof(key));
+            OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
         }
         if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
@@ -632,6 +641,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             fclose(out);
             unlink(output_placeholder);
             OPENSSL_cleanse(key, sizeof(key));
+            OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
         }
         EVP_CIPHER_CTX_free(ctx);
