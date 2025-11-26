@@ -69,6 +69,7 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     snprintf(tmpdir_template, sizeof(tmpdir_template), "%s/aaftmp.XXXXXX", base_tmp);
     char *tmpdir = mkdtemp(tmpdir_template);
     if (!tmpdir) { perror("mkdtemp"); return 1; }
+    chmod(tmpdir, 0700);
 
     char temp_path[1024];
     if (original_name[0]) {
@@ -85,30 +86,19 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
         snprintf(work_output, sizeof(work_output), "aaf_plain_%d", (int)getpid());
     }
 
-    if (decrypt_file(aaf_path, work_output, password) != 0) {
+    /* decrypt directly into tmpdir with a controlled filename */
+    char full_work_output[1024];
+    snprintf(full_work_output, sizeof(full_work_output), "%s/%s", tmpdir, work_output);
+    if (decrypt_file(aaf_path, full_work_output, password) != 0) {
         fprintf(stderr, "Decryption failed\n");
         rmdir(tmpdir);
         return 1;
     }
 
-    if (rename(work_output, temp_path) != 0) {
-        perror("rename to temp path failed");
-        FILE *src = fopen(work_output,"rb");
-        FILE *dst = fopen(temp_path, "wb");
-        if(!src || !dst){
-            fprintf(stderr, "copy fallback failed\n");
-            if(src) fclose(src);
-            if (dst) fclose(dst);
-            return 1;
-        }
-        char buf[8192];
-        size_t n;
-        while((n = fread(buf, 1, sizeof(buf), src))>0){
-            fwrite(buf,1,n,dst);
-        }
-        if(src) fclose(src);
-        if(dst) fclose(dst);
-        unlink(work_output);
+    /* move decrypted file to inteded temp_path*/
+    if(rename(full_work_output, temp_path) != 0){
+        perror("rename(temp_path) failed");
+        return 1;
     }
 
     chmod(temp_path, S_IRUSR | S_IWUSR);
@@ -141,27 +131,7 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
         perror("rename final aaf failed");
         return 1;
     }
-
-    FILE *tf = fopen(temp_path, "r+");
-    if (tf) {
-        if (fseek(tf, 0, SEEK_END) == 0) {
-            long sz = ftell(tf);
-            if (sz > 0) {
-                rewind(tf);
-                unsigned char *buf = calloc(1, 4096);
-                long rem = sz;
-                while (rem > 0) {
-                    size_t w = (size_t)(rem > 4096 ? 4096 : rem);
-                    fwrite(buf, 1, w, tf);
-                    rem -= w;
-                }
-                fflush(tf);
-                fsync(fileno(tf));
-                free(buf);
-            }
-        }
-        fclose(tf);
-    }
+    /* safest cleanup: unlink first, unlink only */
     unlink(temp_path);
 
     printf("✅ Temp view complete; file re-encrypted and plaintext removed.\n");
