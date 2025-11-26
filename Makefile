@@ -27,7 +27,7 @@ endif
 DEB_DIR     := $(NAME)_$(VERSION)_$(DEB_ARCH)
 PREFIX      := /usr/local
 
-CC ?= gcc
+CC ?= clang
 
 # Add include directory + auto header dependency
 CFLAGS      := -Wall -O2 -I$(INC_DIR) -MMD -MP
