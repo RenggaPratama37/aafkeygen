@@ -95,12 +95,16 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
         perror("rename to temp path failed");
         FILE *src = fopen(work_output,"rb");
         FILE *dst = fopen(temp_path, "wb");
-        if (src && dst){
-            char buf[8192];
-            size_t r;
-            while((r = fread(buf,1,sizeof(buf),src))>0){
-                fwrite(buf, 1, r, dst);
-            }
+        if(!src || !dst){
+            fprintf(stderr, "copy fallback failed\n");
+            if(src) fclose(src);
+            if (dst) fclose(dst);
+            return 1;
+        }
+        char buf[8192];
+        size_t n;
+        while((n = fread(buf, 1, sizeof(buf), src))>0){
+            fwrite(buf,1,n,dst);
         }
         if(src) fclose(src);
         if(dst) fclose(dst);
