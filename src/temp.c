@@ -91,14 +91,23 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     snprintf(full_work_output, sizeof(full_work_output), "%s/%s", tmpdir, work_output);
     if (decrypt_file(aaf_path, full_work_output, password) != 0) {
         fprintf(stderr, "Decryption failed\n");
-        rmdir(tmpdir);
+        (void)unlink(full_work_output);
+        (void)rmdir(tmpdir);
         return 1;
     }
 
     /* move decrypted file to inteded temp_path*/
     if(rename(full_work_output, temp_path) != 0){
-        perror("rename(temp_path) failed");
+        perror("rename(temp_path) failed(cleanup and exit)");
+        /* remove any plaintext left in tmpdir, then rmdir */
+        (void)unlink(full_work_output);
+        (void)rmdir(tmpdir);
         return 1;
+    }
+    /* tmpdir now empty (we moved the file out) — remove it */
+    if (rmdir(tmpdir) != 0) {
+        /* non-fatal, but warn — leave program flow as normal */
+        perror("rmdir(tmpdir) failed");
     }
 
     chmod(temp_path, S_IRUSR | S_IWUSR);
