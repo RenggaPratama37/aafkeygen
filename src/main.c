@@ -111,6 +111,12 @@ int main(int argc, char *argv[]) {
 
     char default_output[256];
 
+    if(access(input_file, F_OK) != 0){
+        fprintf(stderr, "[X] File not found %s\n", input_file);
+        return 1;
+    }
+
+
     if (encrypt) {
         if (random_name) {
             char random[12];
@@ -145,22 +151,19 @@ int main(int argc, char *argv[]) {
     }
 
     else if (decrypt) {
-        char default_output[256];
-        snprintf(default_output, sizeof(default_output), "%s", input_file);
-
-        char *dot = strstr(default_output, ".aaf");
-        if (dot) *dot = '\0';
+        char default_output[512];
+        size_t ilen = strlen(input_file);
+        if (ilen > 4 && strcmp(input_file + ilen - 4, ".aaf") == 0){
+            snprintf(default_output, sizeof(default_output), "%.*s", (int)(ilen - 4), input_file);
+        } else {
+            snprintf(default_output, sizeof(default_output),"%s.dec", input_file);
+        }
         if (!output_file) output_file = default_output;
 
         /* temp-decrypt mode (simple prompt-based) when random_name==2 */
         if (random_name == 2) {
             printf("[+] Temp-decrypting and opening '%s'\n", input_file);
-            if (temp_decrypt_and_open(input_file, password) == 0) {
-                if (!keep) {
-                    remove(input_file);
-                    printf("[–] Encrypted file deleted.\n");
-                }
-            } else {
+            if (temp_decrypt_and_open(input_file, password) != 0) {
                 fprintf(stderr, "[x] Temp-decrypt failed.\n");
             }
         } else {
