@@ -21,7 +21,6 @@
 
 #define AES_KEY_SIZE 32
 #define AES_BLOCK_SIZE 16
-#define OLD_HEADER "AAFv1"
 #define NEW_MAGIC "AAF4"
 #define NEW_FORMAT_VERSION 2
 /* KDF identifiers */
@@ -279,20 +278,6 @@ enc_fail:
     return 1;
 }
 
-/* Inspect an AAF file and print header/metadata information (v1 legacy-aware).
- * This is a non-destructive helper used by the CLI `--inspect` to show basic
- * information like whether the header exists, IV bytes and original filename.
- */
-int inspect_file(const char *input_file) {
-    /* Deprecated: inspect_file printed header info. Use parse_header() instead.
-     * To preserve compatibility with other callers, we implement inspect_file
-     * as a small wrapper that calls parse_header and returns an exit code.
-     */
-    aaf_header_t hdr;
-    int r = parse_header(input_file, &hdr);
-    if (r != 0) return 1;
-    return 0;
-}
 
 // === backward-compatible decrypt ===
 int decrypt_file(const char *input_file, const char *output_placeholder, const char *password) {
@@ -703,11 +688,16 @@ int parse_header(const char *input_file, aaf_header_t *out) {
         if (!read_u16_be(in, &out->name_len)) { fclose(in); return 1; }
         if (!read_u64_be(in, &out->timestamp)) { fclose(in); return 1; }
 
-        if (out->iv_len > AES_BLOCK_SIZE) {
-            /* skip IV if larger than buffer (shouldn't happen) */
-            if (fseek(in, out->iv_len, SEEK_CUR) != 0) { fclose(in); return 1; }
-        } else {
-            if (fseek(in, out->iv_len, SEEK_CUR) != 0) { fclose(in); return 1; }
+        /* IV length validation */
+        if (out->iv_len > sizeof(out->iv)) {
+            fclose(in);
+            return 1; /* Invalid: IV too large */
+        }
+        if (out->iv_len > 0) {
+            if (fread(out->iv, 1, out->iv_len, in) != out->iv_len) {
+                fclose(in);
+                return 1;
+            }
         }
 
         if (out->name_len > 0) {
@@ -735,8 +725,18 @@ int parse_header(const char *input_file, aaf_header_t *out) {
         if (memcmp(header5, OLD_HEADER, 5) == 0) {
             out->fmt_ver = 1;
             /* read IV */
-            unsigned char iv[AES_BLOCK_SIZE];
-            if (fread(iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) { fclose(in); return 1; }
+            out->iv_len = AES_BLOCK_SIZE;
+
+            if (AES_BLOCK_SIZE > sizeof(out->iv)) {
+                fclose(in);
+                return 1; /* defensive */
+            }
+
+            if (fread(out->iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
+                fclose(in);
+                return 1;
+            }
+            
             uint8_t name_len = 0;
             if (fread(&name_len, 1, 1, in) != 1) { fclose(in); return 1; }
             if (name_len > 0) {
