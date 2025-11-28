@@ -143,6 +143,6 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     /* safest cleanup: unlink first, unlink only */
     unlink(temp_path);
 
-    printf("✅ Temp view complete; file re-encrypted and plaintext removed.\n");
+    printf("Temp view complete; file re-encrypted and plaintext removed.\n");
     return 0;
 }
