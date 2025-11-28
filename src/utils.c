@@ -3,9 +3,9 @@
 
 void print_usage() {
     printf("Usage:\n");
-    printf("  aafkeygen --encrypt <input> <output.aaf> --password <pwd>\n");
-    printf("  aafkeygen --decrypt <input.aaf> <output> --password <pwd>\n");
+    printf("  aafkeygen --encrypt <input> <output.aaf>\n");
+    printf("  aafkeygen --decrypt <input.aaf> <output>\n");
     printf("\nAliases:\n");
-    printf("  aafkeygen -E <input> <output.aaf> -p <pwd>\n");
-    printf("  aafkeygen -D <input.aaf> <output> -p <pwd>\n");
+    printf("  aafkeygen -E <input> <output.aaf> -p\n");
+    printf("  aafkeygen -D <input.aaf> <output>\n");
 }
