@@ -58,27 +58,6 @@ int inspect_file(const char *input_file) {
         if (cipher_bytes < 0) cipher_bytes = 0;
         printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
 
-    } else if (hdr.fmt_ver == 1) {
-        printf("Format: %s (old)\n", OLD_HEADER);
-        printf("IV: ");
-        for (int i = 0; i < AES_BLOCK_SIZE; i++)
-            printf("%02x", hdr.iv[i]);
-        printf("\n");
-
-        if (hdr.name_len > 0)
-            printf("Original filename: %s\n", hdr.original_name);
-        else
-            printf("Original filename: (none)\n");
-
-        long long cipher_bytes =
-            (long long)st.st_size - (long long)hdr.header_bytes;
-        if (cipher_bytes < 0) cipher_bytes = 0;
-        printf("Ciphertext bytes (approx): %lld\n", cipher_bytes);
-
-    } else {
-        printf("Format: legacy (no header detected)\n");
-        printf("Note: legacy format may use zero-IV behavior.\n");
     }
-
     return 0;
 }

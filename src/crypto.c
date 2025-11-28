@@ -722,34 +722,6 @@ int parse_header(const char *input_file, aaf_header_t *out) {
         memcpy(header5, header4, 4);
         header5[4] = c;
         header5[5] = '\0';
-        if (memcmp(header5, OLD_HEADER, 5) == 0) {
-            out->fmt_ver = 1;
-            /* read IV */
-            out->iv_len = AES_BLOCK_SIZE;
-
-            if (AES_BLOCK_SIZE > sizeof(out->iv)) {
-                fclose(in);
-                return 1; /* defensive */
-            }
-
-            if (fread(out->iv, 1, AES_BLOCK_SIZE, in) != AES_BLOCK_SIZE) {
-                fclose(in);
-                return 1;
-            }
-            
-            uint8_t name_len = 0;
-            if (fread(&name_len, 1, 1, in) != 1) { fclose(in); return 1; }
-            if (name_len > 0) {
-                uint8_t nl = name_len;
-                if (nl >= sizeof(out->original_name)) nl = sizeof(out->original_name) - 1;
-                if (fread(out->original_name, 1, nl, in) != nl) { fclose(in); return 1; }
-                out->original_name[nl] = '\0';
-                out->name_len = nl;
-            }
-            out->header_bytes = 5 + AES_BLOCK_SIZE + 1 + out->name_len;
-            fclose(in);
-            return 0;
-        }
         fclose(in);
         return 1; /* unknown/unsupported format */
     }

@@ -54,10 +54,7 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
             if (fread(original_name,1,name_len16,in) != name_len16) { fclose(in); return 1; }
             original_name[name_len16] = '\0';
         }
-    } else {
-        fclose(in);
-        fprintf(stderr, "Unsupported or legacy format for temp-decrypt\n");
-        return 1;
+    
     }
     fclose(in);
 

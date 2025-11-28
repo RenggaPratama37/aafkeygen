@@ -14,7 +14,6 @@
 /* Common constants exposed to other modules */
 #define AES_BLOCK_SIZE 16
 #define NEW_MAGIC "AAF4"
-#define OLD_HEADER "AAFv1"
 #define NEW_FORMAT_VERSION 2
 
 /* Parsed header structure for callers that want to inspect metadata without
