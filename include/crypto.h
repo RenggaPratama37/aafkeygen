@@ -14,6 +14,7 @@
 /* Common constants exposed to other modules */
 #define AES_BLOCK_SIZE 16
 #define NEW_MAGIC "AAF4"
+#define OLD_HEADER "AAFv1"
 #define NEW_FORMAT_VERSION 2
 
 /* Parsed header structure for callers that want to inspect metadata without
@@ -33,6 +34,7 @@ typedef struct {
 	uint16_t name_len;
 	uint64_t timestamp;
 	char original_name[256];
+	uint8_t iv[16]; 
 	size_t header_bytes;
 } aaf_header_t;
 
