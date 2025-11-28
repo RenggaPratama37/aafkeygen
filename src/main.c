@@ -101,7 +101,11 @@ int main(int argc, char *argv[]) {
             decrypt = 1; /* treat as decrypt but handled specially below */
             /* mark a special flag via random_name variable to indicate temp mode */
             random_name = 2; /* 2 = temp-decrypt mode */
+        } else {
+            fprintf(stderr, "[X] Unknown argument: %s\n", argv[i]);
+            return 1;
         }
+
     }
 
     if (!input_file || !password || (!encrypt && !decrypt)) {
