@@ -42,11 +42,6 @@ Security notes and limitations for `--temp-decrypt` are listed below.
 ./aafkeygen --inspect secret.txt.aaf
 ```
 
-Notes for users / migration
-
-- Files produced with v1.4.4 use the AAF4 header format (version 2) that includes PBKDF2 salt and iterations plus AEAD metadata. Older versions (AAFv1) are still readable by the tool.
-- If you rely on the old (CBC) behavior, use the `--legacy` flag when encrypting to force the legacy KDF/behavior.
-
 Temporary decrypt security notes
 
 - The tool writes the plaintext to a temporary file with permissions 0600 inside `$XDG_RUNTIME_DIR` (if set), otherwise `$TMPDIR` or `/tmp`.
