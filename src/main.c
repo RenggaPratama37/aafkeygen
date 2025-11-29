@@ -5,7 +5,6 @@
 #include "crypto.h"
 #include "temp.h"
 #include <openssl/rand.h>
-#include "version.h"
 #include "password_input.h"
 #include "utils.h"
 

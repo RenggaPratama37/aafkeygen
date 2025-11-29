@@ -1,6 +1,5 @@
 #include "utils.h"
 #include <stdio.h>
-#include "version.h"
 
 void print_usage() {
     printf("Usage:\n");
