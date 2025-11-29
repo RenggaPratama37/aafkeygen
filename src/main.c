@@ -7,22 +7,7 @@
 #include <openssl/rand.h>
 #include "version.h"
 #include "password_input.h"
-
-
-void print_help() {
-    printf("AAFKeygen v%s\n", VERSION);
-    printf("Usage:\n");
-    printf("  aafkeygen -E <file> [options]\n");
-    printf("  aafkeygen -D <file.aaf>  [options]\n\n");
-    printf("Options:\n");
-    printf("  -E, --encrypt <file>       Encrypt file\n");
-    printf("  -D, --decrypt <file>       Decrypt file\n");
-    printf("  -o, --output <name>        Custom output file name\n");
-    printf("  -r, --random-name          Generate random output filename\n");
-    printf("      --keep                 Keep original file after operation\n");
-    printf("      --temp-decrypt         Decrypt to a secure temp file, open with default viewer, re-encrypt after close (prompt-based)\n");
-    printf("  -h, --help                 Show this message\n");
-}
+#include "utils.h"
 
 static void random_string(char *buf, size_t len) {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
