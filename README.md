@@ -2,7 +2,7 @@
 
 AAFKeygen — Authenticated Access File encryptor for Linux
 
-Version: 1.5.2
+Version: 1.5.4
 
 AAFKeygen is a small command-line utility for encrypting files with a password-derived key. It now supports authenticated encryption (AES-256-GCM) and a versioned on-disk header so encrypted files can include metadata (KDF, salt, iterations, AEAD id, IV length, original filename, timestamp).
 
@@ -45,8 +45,8 @@ Security notes and limitations for `--temp-decrypt` are listed below.
 
 Notes for users / migration
 
-- Files produced with v1.4.4 use the AAF4 header format (version 2) that includes PBKDF2 salt and iterations plus AEAD metadata. Older versions (AAFv1) are still readable by the tool.
-- If you rely on the old (CBC) behavior, use the `--legacy` flag when encrypting to force the legacy KDF/behavior.
+- This release (v1.5.4) drops support for the legacy AAFv1 format and the `--legacy` option. The tool now only reads and writes the AAF4 header (version 2) which requires PBKDF2 and AEAD metadata.
+- If you still have legacy AAFv1 files, decrypt them with v1.5.2 (or an older release that still supports legacy) and re-encrypt with this version to migrate your data.
 
 Temporary decrypt security notes
 

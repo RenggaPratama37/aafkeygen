@@ -22,7 +22,6 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     char original_name[256] = {0};
     uint8_t aead_id = AEAD_NONE;
     uint8_t iv_len = AES_BLOCK_SIZE;
-    long header_end = 0;
 
     if (memcmp(header4, NEW_MAGIC, 4) == 0) {
         uint8_t fmt_ver = 0;
@@ -47,7 +46,6 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     if (fread(b8, 1, 8, in) != 8) { fclose(in); return 1; }
     uint64_t tmp64 = 0;
     for (int i = 0; i < 8; i++) tmp64 = (tmp64 << 8) | b8[i];
-    header_end = (long)tmp64;
         if (fseek(in, iv_len, SEEK_CUR) != 0) { fclose(in); return 1; }
         if (name_len16 > 0) {
             if (name_len16 >= sizeof(original_name)) name_len16 = sizeof(original_name)-1;
@@ -56,7 +54,7 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
         }
     } else {
         fclose(in);
-        fprintf(stderr, "Unsupported or legacy format for temp-decrypt\n");
+        fprintf(stderr, "Unsupported or unknown format for temp-decrypt\n");
         return 1;
     }
     fclose(in);
