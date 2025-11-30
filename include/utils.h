@@ -1,7 +1,7 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#define VERSION "1.5.4"
+#include "version.h"
 
 void print_usage();
 void print_help();

@@ -10,3 +10,6 @@ aafkeygen_*/
 Thumbs.db
 *~
 *.swp
+
+# Generated version header (do not track)
+include/version.h
