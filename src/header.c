@@ -83,47 +83,47 @@ int parse_header(const char *input_file, aaf_header_t *out) {
         return 0;
     }
 
-    int write_header(FILE *out, const aaf_header_t *hdr) {
-        if (!out || !hdr) return 1;
-        /* magic */
-        if (fwrite(NEW_MAGIC, 1, 4, out) != 4) return 1;
-        if (fwrite(&hdr->fmt_ver, 1, 1, out) != 1) return 1;
-        if (hdr->fmt_ver >= 2) {
-            if (fwrite(&hdr->kdf_id, 1, 1, out) != 1) return 1;
-            if (fwrite(&hdr->salt_len, 1, 1, out) != 1) return 1;
-            if (hdr->salt_len > 0) {
-                if (fwrite(hdr->salt, 1, hdr->salt_len, out) != hdr->salt_len) return 1;
-            }
-            unsigned char itb[4];
-            itb[0] = (hdr->iterations >> 24) & 0xFF;
-            itb[1] = (hdr->iterations >> 16) & 0xFF;
-            itb[2] = (hdr->iterations >> 8) & 0xFF;
-            itb[3] = hdr->iterations & 0xFF;
-            if (fwrite(itb, 1, 4, out) != 4) return 1;
-        }
-        if (hdr->fmt_ver >= 2) {
-            if (fwrite(&hdr->aead_id, 1, 1, out) != 1) return 1;
-            if (fwrite(&hdr->iv_len, 1, 1, out) != 1) return 1;
-        }
-        /* name len and timestamp */
-        unsigned char nl[2];
-        nl[0] = (hdr->name_len >> 8) & 0xFF;
-        nl[1] = hdr->name_len & 0xFF;
-        if (fwrite(nl, 1, 2, out) != 2) return 1;
-        unsigned char tsb[8];
-        uint64_t ts = hdr->timestamp;
-        for (int i = 0; i < 8; i++) tsb[7 - i] = (ts >> (i * 8)) & 0xFF;
-        if (fwrite(tsb, 1, 8, out) != 8) return 1;
-
-        if (hdr->iv_len > 0) {
-            if (fwrite(hdr->iv, 1, hdr->iv_len, out) != hdr->iv_len) return 1;
-        }
-        if (hdr->name_len > 0) {
-            if (fwrite(hdr->original_name, 1, hdr->name_len, out) != hdr->name_len) return 1;
-        }
-        return 0;
-    }
-
     fclose(in);
     return 1;
+}
+
+int write_header(FILE *out, const aaf_header_t *hdr) {
+    if (!out || !hdr) return 1;
+    /* magic */
+    if (fwrite(NEW_MAGIC, 1, 4, out) != 4) return 1;
+    if (fwrite(&hdr->fmt_ver, 1, 1, out) != 1) return 1;
+    if (hdr->fmt_ver >= 2) {
+        if (fwrite(&hdr->kdf_id, 1, 1, out) != 1) return 1;
+        if (fwrite(&hdr->salt_len, 1, 1, out) != 1) return 1;
+        if (hdr->salt_len > 0) {
+            if (fwrite(hdr->salt, 1, hdr->salt_len, out) != hdr->salt_len) return 1;
+        }
+        unsigned char itb[4];
+        itb[0] = (hdr->iterations >> 24) & 0xFF;
+        itb[1] = (hdr->iterations >> 16) & 0xFF;
+        itb[2] = (hdr->iterations >> 8) & 0xFF;
+        itb[3] = hdr->iterations & 0xFF;
+        if (fwrite(itb, 1, 4, out) != 4) return 1;
+    }
+    if (hdr->fmt_ver >= 2) {
+        if (fwrite(&hdr->aead_id, 1, 1, out) != 1) return 1;
+        if (fwrite(&hdr->iv_len, 1, 1, out) != 1) return 1;
+    }
+    /* name len and timestamp */
+    unsigned char nl[2];
+    nl[0] = (hdr->name_len >> 8) & 0xFF;
+    nl[1] = hdr->name_len & 0xFF;
+    if (fwrite(nl, 1, 2, out) != 2) return 1;
+    unsigned char tsb[8];
+    uint64_t ts = hdr->timestamp;
+    for (int i = 0; i < 8; i++) tsb[7 - i] = (ts >> (i * 8)) & 0xFF;
+    if (fwrite(tsb, 1, 8, out) != 8) return 1;
+
+    if (hdr->iv_len > 0) {
+        if (fwrite(hdr->iv, 1, hdr->iv_len, out) != hdr->iv_len) return 1;
+    }
+    if (hdr->name_len > 0) {
+        if (fwrite(hdr->original_name, 1, hdr->name_len, out) != hdr->name_len) return 1;
+    }
+    return 0;
 }
