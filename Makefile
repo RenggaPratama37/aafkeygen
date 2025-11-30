@@ -6,7 +6,7 @@
 
 # --- Project info ---
 NAME        := aafkeygen
-VERSION     := $(shell cat VERSION 2>/dev/null || echo 1.5.4)
+VERSION     := 1.5.4
 BINARY      := $(NAME)
 
 SRC_DIR     := src
@@ -46,13 +46,6 @@ libaafcrypto.a: $(LIB_OBJS)
 	@echo "Creating static library $@"
 	@ar rcs $@ $^
 
-# Generate a C header from the top-level VERSION file so C code can
-# reference the project version via a single source of truth.
-include/version.h: VERSION
-	@mkdir -p include
-	@printf '#ifndef VERSION_H\n#define VERSION_H\n\n#define VERSION "%s"\n\n#endif\n' "$(VERSION)" > include/version.h
-
-
 # --- Default rule ---
 all: $(BINARY)
 
@@ -61,9 +54,8 @@ $(BINARY): $(OBJS)
 	@echo "Linking $(BINARY)..."
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-
-# Ensure version header exists before compiling any C sources
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c include/version.h
+# --- Object build rule ---
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(BUILD_DIR)
 	@echo "Compiling $< ..."
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -91,11 +83,7 @@ deb: $(BINARY)
 	mkdir -p $(DEB_DIR)/DEBIAN
 	mkdir -p $(DEB_DIR)/usr/bin
 	cp $(BINARY) $(DEB_DIR)/usr/bin/
-	# Copy debian files but substitute Version field from top-level VERSION
-	cp debian/* $(DEB_DIR)/DEBIAN/ || true
-	if [ -f $(DEB_DIR)/DEBIAN/control ]; then \
-		sed -E 's/^Version:.*/Version: $(VERSION)/' $(DEB_DIR)/DEBIAN/control > $(DEB_DIR)/DEBIAN/control.tmp && mv $(DEB_DIR)/DEBIAN/control.tmp $(DEB_DIR)/DEBIAN/control ; \
-	fi
+	cp debian/* $(DEB_DIR)/DEBIAN/
 	chmod 755 $(DEB_DIR)/DEBIAN/postinst || true
 	dpkg-deb --build $(DEB_DIR)
 	@echo "✅ Package built: $(DEB_DIR).deb"
