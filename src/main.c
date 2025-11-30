@@ -6,17 +6,17 @@
 #include "temp.h"
 #include <openssl/rand.h>
 #include "version.h"
+#include "password_input.h"
 
 
 void print_help() {
     printf("AAFKeygen v%s\n", VERSION);
     printf("Usage:\n");
-    printf("  aafkeygen -E <file> -p <password> [options]\n");
-    printf("  aafkeygen -D <file.aaf> -p <password> [options]\n\n");
+    printf("  aafkeygen -E <file> [options]\n");
+    printf("  aafkeygen -D <file.aaf>  [options]\n\n");
     printf("Options:\n");
     printf("  -E, --encrypt <file>       Encrypt file\n");
     printf("  -D, --decrypt <file>       Decrypt file\n");
-    printf("  -p, --password <pass>      Password\n");
     printf("  -o, --output <name>        Custom output file name\n");
     printf("  -r, --random-name          Generate random output filename\n");
     printf("      --keep                 Keep original file after operation\n");
@@ -65,8 +65,6 @@ int main(int argc, char *argv[]) {
             encrypt = 1; input_file = argv[++i];
         } else if (!strcmp(argv[i], "-D") || !strcmp(argv[i], "--decrypt")) {
             decrypt = 1; input_file = argv[++i];
-        } else if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--password")) {
-            password = argv[++i];
         } else if (!strcmp(argv[i], "-o") || !strcmp(argv[i], "--output")) {
             output_file = argv[++i];
         } else if (!strcmp(argv[i], "--keep")) {
@@ -107,6 +105,8 @@ int main(int argc, char *argv[]) {
         }
 
     }
+
+    password = read_password("[Authenticated Access File] Password: ");
 
     if (!input_file || !password || (!encrypt && !decrypt)) {
         print_help();

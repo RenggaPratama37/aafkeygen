@@ -2,7 +2,6 @@
 
 AAFKeygen — Authenticated Access File encryptor for Linux
 
-Version: 1.5.2
 
 AAFKeygen is a small command-line utility for encrypting files with a password-derived key. It now supports authenticated encryption (AES-256-GCM) and a versioned on-disk header so encrypted files can include metadata (KDF, salt, iterations, AEAD id, IV length, original filename, timestamp).
 
@@ -11,26 +10,26 @@ Quick usage
 - Encrypt a file (default AEAD/GCM):
 
 ```sh
-./aafkeygen -E secret.txt -p hunter2
+./aafkeygen -E secret.txt
 ```
 
 - Encrypt and force AES-GCM explicitly:
 
 ```sh
-./aafkeygen -E secret.txt -p hunter2 --aead gcm
+./aafkeygen -E secret.txt --aead gcm
 ```
 
 - Override PBKDF2 iterations (default 100000):
 
 ```sh
-./aafkeygen -E secret.txt -p hunter2 --iterations 200000
+./aafkeygen -E secret.txt --iterations 200000
 ```
 
 - Inspect a .aaf file header (shows KDF, salt, iterations, AEAD, IV length, original filename):
  - Temporary decrypt & open (prompt-based):
 
 ```sh
-./aafkeygen -D secret.jpg.aaf -p hunter2 --temp-decrypt
+./aafkeygen -D secret.jpg.aaf --temp-decrypt
 ```
 
 This mode will decrypt the AAF to a secure temporary file (preserving the original filename/extension stored in the AAF header), open it with your system default viewer via `xdg-open`, prompt you to press ENTER when you're done viewing, then re-encrypt the file and attempt to securely delete the plaintext.
