@@ -8,6 +8,29 @@
 #include "password_input.h"
 #include "utils.h"
 
+typedef struct{
+    int exist;
+    const char *extension;
+    int is_aaf;
+} CheckInput;
+
+CheckInput check_input(const char *input_file){
+    CheckInput result = {0,NULL, 0};
+    FILE *f = fopen(input_file, "rb");
+    if(f != NULL){
+        result.exist = 1;
+        fclose(f);
+    }
+    const char *extension = strrchr(input_file, '.');
+    if (extension != NULL){
+        result.extension = extension;
+        if(strcmp(extension, ".aaf") == 0){
+            result.is_aaf =1;
+        }
+    }
+    return result;
+}
+
 static void random_string(char *buf, size_t len) {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     unsigned char rnd[len];
@@ -88,19 +111,37 @@ int main(int argc, char *argv[]) {
 
     }
 
-    password = read_password("[Authenticated Access File] Password: ");
+    char default_output[256];
 
-    if (!input_file || !password || (!encrypt && !decrypt)) {
+    /* validate arguments presence first */
+    if (!input_file || (!encrypt && !decrypt)) {
         print_help();
         return 1;
     }
 
-    char default_output[256];
-
-    if(access(input_file, F_OK) != 0){
-        fprintf(stderr, "[X] File not found %s\n", input_file);
+    /* check file existence and extension rules before prompting for password */
+    CheckInput info = check_input(input_file);
+    if (!info.exist) {
+        fprintf(stderr, "[X] File not found: %s\n", input_file);
         return 1;
     }
+
+    if (encrypt) {
+        if (info.is_aaf) {
+            fprintf(stderr, "[X] Refusing to encrypt: '%s' already has .aaf extension\n", input_file);
+            return 1;
+        }
+    }
+
+    if (decrypt) {
+        if (!info.is_aaf) {
+            fprintf(stderr, "[X] Refusing to decrypt: '%s' is not a .aaf file\n", input_file);
+            return 1;
+        }
+    }
+
+    /* now prompt for password */
+    password = read_password("[Authenticated Access File] Password: ");
 
 
     if (encrypt) {
@@ -140,7 +181,8 @@ int main(int argc, char *argv[]) {
         if (ilen > 4 && strcmp(input_file + ilen - 4, ".aaf") == 0){
             snprintf(default_output, sizeof(default_output), "%.*s", (int)(ilen - 4), input_file);
         } else {
-            snprintf(default_output, sizeof(default_output),"%s.dec", input_file);
+            fprintf(stderr, "%s is not .aaf file\n", input_file);
+            return 1;
         }
         if (!output_file) output_file = default_output;
 
