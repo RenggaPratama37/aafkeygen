@@ -8,6 +8,11 @@
 #include <openssl/crypto.h>
 #include <sys/stat.h>
 #include <openssl/evp.h>
+/* Local KDF wrapper */
+#include "kdf.h"
+/* AEAD / Cipher helpers */
+#include "aead.h"
+#include "cipher.h"
 
 /* Silence direct printing from this module so crypto becomes a pure engine.
  * The main program (or other frontends) should handle user-facing output.
@@ -86,62 +91,44 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
 
     unsigned char key[AES_KEY_SIZE], iv[AES_BLOCK_SIZE];
 
-    /* New format header (AAF4 v2): magic(4) | version(1) | kdf_id(1) | salt_len(1) | salt | iterations(4 BE) | name_len(2) | timestamp(8) | IV(16) | name */
-    if (fwrite(NEW_MAGIC, 1, 4, out) != 4) goto write_error;
-    uint8_t fmt_ver = NEW_FORMAT_VERSION;
-    if (fwrite(&fmt_ver, 1, 1, out) != 1) goto write_error;
-
-    /* KDF metadata: we'll use PBKDF2-HMAC-SHA256 with fixed salt length */
-    uint8_t kdf_id = KDF_PBKDF2_HMAC_SHA256;
-    if (fwrite(&kdf_id, 1, 1, out) != 1) goto write_error;
-    uint8_t salt_len = DEFAULT_SALT_LEN;
-    if (fwrite(&salt_len, 1, 1, out) != 1) goto write_error;
-
+    /* Build header metadata and write it using header module */
     unsigned char salt[DEFAULT_SALT_LEN];
     if (RAND_bytes(salt, DEFAULT_SALT_LEN) != 1) {
         fprintf(stderr, "Randomness generation for salt failed.\n");
         goto write_error;
     }
-    if (fwrite(salt, 1, DEFAULT_SALT_LEN, out) != DEFAULT_SALT_LEN) goto write_error;
-
     uint32_t iterations = DEFAULT_PBKDF2_ITERS;
-    /* Allow caller to override iterations via global variable set by main */
     extern uint32_t pbkdf2_iterations;
     if (pbkdf2_iterations > 0) iterations = pbkdf2_iterations;
-    /* write iterations as big-endian */
-    unsigned char itb[4];
-    itb[0] = (iterations >> 24) & 0xFF;
-    itb[1] = (iterations >> 16) & 0xFF;
-    itb[2] = (iterations >> 8) & 0xFF;
-    itb[3] = iterations & 0xFF;
-    if (fwrite(itb, 1, 4, out) != 4) goto write_error;
 
-    /* derive key with PBKDF2 (legacy support removed) */
-    if (!PKCS5_PBKDF2_HMAC(password, strlen(password), salt, DEFAULT_SALT_LEN, iterations, EVP_sha256(), AES_KEY_SIZE, key)) {
+    /* derive key */
+    if (!derive_key_pbkdf2(password, salt, DEFAULT_SALT_LEN, iterations, key, AES_KEY_SIZE)) {
         fprintf(stderr, "PBKDF2 derivation failed.\n");
         goto write_error;
     }
 
-    /* choose AEAD and IV length and write AEAD metadata */
     extern int selected_aead;
     int aead = selected_aead;
     uint8_t iv_len = AES_BLOCK_SIZE;
     if (aead == AEAD_AES_256_GCM) iv_len = GCM_IV_LEN;
-    uint8_t aead_id = (uint8_t)aead;
-    if (fwrite(&aead_id, 1, 1, out) != 1) goto write_error;
-    if (fwrite(&iv_len, 1, 1, out) != 1) goto write_error;
     if (RAND_bytes(iv, iv_len) != 1) goto write_error;
 
+    aaf_header_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.fmt_ver = NEW_FORMAT_VERSION;
+    hdr.kdf_id = KDF_PBKDF2_HMAC_SHA256;
+    hdr.salt_len = DEFAULT_SALT_LEN;
+    memcpy(hdr.salt, salt, DEFAULT_SALT_LEN);
+    hdr.iterations = iterations;
+    hdr.aead_id = (uint8_t)aead;
+    hdr.iv_len = iv_len;
+    hdr.timestamp = (uint64_t)time(NULL);
     size_t fnlen = strlen(input_file);
     if (fnlen > 65535) fnlen = 65535;
-    uint16_t name_len16 = (uint16_t)fnlen;
-    if (!write_u16_be(out, name_len16)) goto write_error;
-
-    uint64_t ts = (uint64_t)time(NULL);
-    if (!write_u64_be(out, ts)) goto write_error;
-
-    if (fwrite(iv, 1, iv_len, out) != iv_len) goto write_error;
-    if (fwrite(input_file, 1, name_len16, out) != name_len16) goto write_error;
+    hdr.name_len = (uint16_t)fnlen;
+    strncpy(hdr.original_name, input_file, hdr.name_len);
+    memcpy(hdr.iv, iv, hdr.iv_len);
+    if (write_header(out, &hdr) != 0) goto write_error;
 
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
@@ -153,95 +140,13 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
     int inlen, outlen;
 
     if (aead == AEAD_AES_256_GCM) {
-        /* AES-GCM AEAD */
-        if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1) {
-            fprintf(stderr, "EVP_EncryptInit_ex (gcm init) failed\n");
-            EVP_CIPHER_CTX_free(ctx);
-            goto write_error;
-        }
-        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL) != 1) {
-            fprintf(stderr, "EVP_CIPHER_CTX_ctrl set ivlen failed\n");
-            EVP_CIPHER_CTX_free(ctx);
-            goto write_error;
-        }
-        if (EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) != 1) {
-            fprintf(stderr, "EVP_EncryptInit_ex (gcm key/iv) failed\n");
-            EVP_CIPHER_CTX_free(ctx);
-            goto write_error;
-        }
-
-        while ((inlen = fread(inbuf, 1, sizeof(inbuf), in)) > 0) {
-            if (EVP_EncryptUpdate(ctx, outbuf, &outlen, inbuf, inlen) != 1) {
-                fprintf(stderr, "GCM Encryption update failed.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                goto enc_fail;
-            }
-            if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
-                fprintf(stderr, "Write error while writing ciphertext.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                goto enc_fail;
-            }
-        }
-
-        if (EVP_EncryptFinal_ex(ctx, outbuf, &outlen) != 1) {
-            fprintf(stderr, "GCM Encryption finalization failed.\n");
-            EVP_CIPHER_CTX_free(ctx);
+        if (aead_encrypt_gcm_stream(key, iv, iv_len, in, out) != 0) {
             goto enc_fail;
         }
-        if (outlen > 0) {
-            if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
-                fprintf(stderr, "Write error while writing final ciphertext.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                goto enc_fail;
-            }
-        }
-
-        unsigned char tag[GCM_TAG_LEN];
-        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, GCM_TAG_LEN, tag) != 1) {
-            fprintf(stderr, "Failed to get GCM tag.\n");
-            EVP_CIPHER_CTX_free(ctx);
-            goto enc_fail;
-        }
-        if (fwrite(tag, 1, GCM_TAG_LEN, out) != GCM_TAG_LEN) {
-            fprintf(stderr, "Failed to write GCM tag.\n");
-            EVP_CIPHER_CTX_free(ctx);
-            goto enc_fail;
-        }
-
-        EVP_CIPHER_CTX_free(ctx);
     } else {
-        /* fallback to AES-256-CBC for non-AEAD or legacy mode */
-        if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1) {
-            fprintf(stderr, "EVP_EncryptInit_ex failed\n");
-            EVP_CIPHER_CTX_free(ctx);
-            goto write_error;
-        }
-
-        while ((inlen = fread(inbuf, 1, sizeof(inbuf), in)) > 0) {
-            if (EVP_EncryptUpdate(ctx, outbuf, &outlen, inbuf, inlen) != 1) {
-                fprintf(stderr, "Encryption update failed.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                goto enc_fail;
-            }
-            if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
-                fprintf(stderr, "Write error while writing ciphertext.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                goto enc_fail;
-            }
-        }
-
-        if (EVP_EncryptFinal_ex(ctx, outbuf, &outlen) != 1) {
-            fprintf(stderr, "Encryption finalization failed.\n");
-            EVP_CIPHER_CTX_free(ctx);
+        if (cipher_encrypt_cbc_stream(key, iv, in, out) != 0) {
             goto enc_fail;
         }
-        if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
-            fprintf(stderr, "Write error while writing final ciphertext.\n");
-            EVP_CIPHER_CTX_free(ctx);
-            goto enc_fail;
-        }
-
-        EVP_CIPHER_CTX_free(ctx);
     }
     fclose(in);
     fclose(out);
@@ -313,7 +218,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
 
         /* Only PBKDF2-HMAC-SHA256 is supported; fail otherwise. */
         if (kdf_id != KDF_PBKDF2_HMAC_SHA256) { fclose(in); return 1; }
-        if (!PKCS5_PBKDF2_HMAC(password, strlen(password), saltbuf, salt_len, iterations, EVP_sha256(), AES_KEY_SIZE, key)) {
+        if (!derive_key_pbkdf2(password, saltbuf, salt_len, iterations, key, AES_KEY_SIZE)) {
             fprintf(stderr, "PBKDF2 derivation failed.\n");
             fclose(in);
             return 1;
@@ -407,60 +312,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             return 1;
         }
 
-        if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1) {
-            fprintf(stderr, "EVP_DecryptInit_ex (gcm init) failed\n");
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(in);
-            fclose(out);
-            return 1;
-        }
-        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL) != 1) {
-            fprintf(stderr, "EVP_CIPHER_CTX_ctrl set ivlen failed\n");
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(in);
-            fclose(out);
-            return 1;
-        }
-        if (EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv) != 1) {
-            fprintf(stderr, "EVP_DecryptInit_ex (gcm key/iv) failed\n");
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(in);
-            fclose(out);
-            return 1;
-        }
-
-        long long remaining = ciphertext_len;
-        while (remaining > 0) {
-            size_t toread = (size_t)(remaining > (long long)sizeof(inbuf) ? sizeof(inbuf) : remaining);
-            inlen = fread(inbuf, 1, toread, in);
-            if ((long long)inlen <= 0) break;
-            if (EVP_DecryptUpdate(ctx, outbuf, &outlen, inbuf, inlen) != 1) {
-                fprintf(stderr, "GCM Decryption update failed.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                fclose(in);
-                fclose(out);
-                unlink(final_output);
-                OPENSSL_cleanse(key, sizeof(key));
-                OPENSSL_cleanse(iv,sizeof(iv));
-                return 1;
-            }
-            if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
-                fprintf(stderr, "Write error while writing plaintext.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                fclose(in);
-                fclose(out);
-                unlink(final_output);
-                OPENSSL_cleanse(key, sizeof(key));
-                OPENSSL_cleanse(iv,sizeof(iv));
-                return 1;
-            }
-            remaining -= inlen;
-        }
-
-        /* read tag */
-        unsigned char tag[GCM_TAG_LEN];
-        if (fread(tag, 1, GCM_TAG_LEN, in) != GCM_TAG_LEN) {
-            fprintf(stderr, "Failed to read GCM tag.\n");
+        if (aead_decrypt_gcm_stream(key, iv, iv_len, in, ciphertext_len, out) != 0) {
             EVP_CIPHER_CTX_free(ctx);
             fclose(in);
             fclose(out);
@@ -469,41 +321,6 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
         }
-        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, GCM_TAG_LEN, tag) != 1) {
-            fprintf(stderr, "Failed to set expected GCM tag.\n");
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(in);
-            fclose(out);
-            unlink(final_output);
-            OPENSSL_cleanse(key, sizeof(key));
-            OPENSSL_cleanse(iv, sizeof(iv));
-            return 1;
-        }
-
-        if (EVP_DecryptFinal_ex(ctx, outbuf, &outlen) != 1) {
-            fprintf(stderr, "Incorrect password or corrupted (GCM tag mismatch).\n");
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(in);
-            fclose(out);
-            unlink(final_output);
-            OPENSSL_cleanse(key, sizeof(key));
-            OPENSSL_cleanse(iv, sizeof(iv));
-            return 1;
-        }
-        if (outlen > 0) {
-            if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
-                fprintf(stderr, "Write error while writing final plaintext.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                fclose(in);
-                fclose(out);
-                unlink(output_placeholder);
-                OPENSSL_cleanse(key, sizeof(key));
-                OPENSSL_cleanse(iv, sizeof(iv));
-                return 1;
-            }
-        }
-
-        EVP_CIPHER_CTX_free(ctx);
     } else {
         /* fallback to AES-256-CBC for non-AEAD or legacy mode */
         if (iv_len != AES_BLOCK_SIZE) {
@@ -513,49 +330,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             fclose(out);
             return 1;
         }
-        if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1) {
-            fprintf(stderr, "EVP_DecryptInit_ex failed\n");
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(in);
-            fclose(out);
-            return 1;
-        }
-
-        while ((inlen = fread(inbuf, 1, sizeof(inbuf), in)) > 0) {
-            if (EVP_DecryptUpdate(ctx, outbuf, &outlen, inbuf, inlen) != 1) {
-                fprintf(stderr, "Decryption failed.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                fclose(in);
-                fclose(out);
-                unlink(output_placeholder);
-                OPENSSL_cleanse(key, sizeof(key));
-                OPENSSL_cleanse(iv, sizeof(iv));
-                return 1;
-            }
-            if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
-                fprintf(stderr, "Write error while writing plaintext.\n");
-                EVP_CIPHER_CTX_free(ctx);
-                fclose(in);
-                fclose(out);
-                unlink(output_placeholder);
-                OPENSSL_cleanse(key, sizeof(key));
-                OPENSSL_cleanse(iv, sizeof(iv));
-                return 1;
-            }
-        }
-
-        if (EVP_DecryptFinal_ex(ctx, outbuf, &outlen) != 1) {
-            fprintf(stderr, "Incorrect password or corrupted file.\n");
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(in);
-            fclose(out);
-            unlink(final_output);
-            OPENSSL_cleanse(key, sizeof(key));
-            OPENSSL_cleanse(iv, sizeof(iv));
-            return 1;
-        }
-        if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) {
-            fprintf(stderr, "Write error while writing final plaintext.\n");
+        if (cipher_decrypt_cbc_stream(key, iv, in, out) != 0) {
             EVP_CIPHER_CTX_free(ctx);
             fclose(in);
             fclose(out);
@@ -564,7 +339,6 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
         }
-        EVP_CIPHER_CTX_free(ctx);
     }
     fclose(in);
     fclose(out);
@@ -575,87 +349,9 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
     return 0;
 }
 
-/* parse_header: non-printing parser that fills aaf_header_t from an AAF file.
- * Returns 0 on success, non-zero on failure.
+/* Header parsing moved to src/header.c (parse_header implementation).
+ * crypto.c now relies on the header module for parsing/inspecting AAF headers.
  */
-int parse_header(const char *input_file, aaf_header_t *out) {
-    if (!out) return 1;
-    memset(out, 0, sizeof(*out));
-
-    FILE *in = fopen(input_file, "rb");
-    if (!in) return 1;
-
-    unsigned char header4[4] = {0};
-    if (fread(header4, 1, 4, in) != 4) { fclose(in); return 1; }
-
-    if (memcmp(header4, NEW_MAGIC, 4) == 0) {
-        memcpy(out->magic, NEW_MAGIC, 4);
-        out->magic[4] = '\0';
-        uint8_t fmt_ver = 0;
-        if (fread(&fmt_ver, 1, 1, in) != 1) { fclose(in); return 1; }
-        out->fmt_ver = fmt_ver;
-
-        if (fmt_ver >= 2) {
-            if (fread(&out->kdf_id, 1, 1, in) != 1) { fclose(in); return 1; }
-            if (fread(&out->salt_len, 1, 1, in) != 1) { fclose(in); return 1; }
-            if (out->salt_len > 0) {
-                if (out->salt_len > MAX_SALT_LEN) {
-                    /* truncate if header has larger salt than we support */
-                    if (fseek(in, out->salt_len, SEEK_CUR) != 0) { fclose(in); return 1; }
-                } else {
-                    if (fread(out->salt, 1, out->salt_len, in) != out->salt_len) { fclose(in); return 1; }
-                }
-            }
-            unsigned char itb[4];
-            if (fread(itb, 1, 4, in) != 4) { fclose(in); return 1; }
-            out->iterations = ((uint32_t)itb[0] << 24) | ((uint32_t)itb[1] << 16) | ((uint32_t)itb[2] << 8) | (uint32_t)itb[3];
-        }
-
-        if (fmt_ver >= 2) {
-            if (fread(&out->aead_id, 1, 1, in) != 1) { fclose(in); return 1; }
-            if (fread(&out->iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
-        } else {
-            out->aead_id = AEAD_NONE;
-            out->iv_len = AES_BLOCK_SIZE;
-        }
-
-        if (!read_u16_be(in, &out->name_len)) { fclose(in); return 1; }
-        if (!read_u64_be(in, &out->timestamp)) { fclose(in); return 1; }
-
-        /* IV length validation */
-        if (out->iv_len > sizeof(out->iv)) {
-            fclose(in);
-            return 1; /* Invalid: IV too large */
-        }
-        if (out->iv_len > 0) {
-            if (fread(out->iv, 1, out->iv_len, in) != out->iv_len) {
-                fclose(in);
-                return 1;
-            }
-        }
-
-        if (out->name_len > 0) {
-            uint16_t nl = out->name_len;
-            if (nl >= sizeof(out->original_name)) nl = sizeof(out->original_name) - 1;
-            if (fread(out->original_name, 1, nl, in) != nl) { fclose(in); return 1; }
-            out->original_name[nl] = '\0';
-        }
-
-        /* compute header bytes size approximately */
-        out->header_bytes = 4 + 1; /* magic + fmt */
-        if (out->fmt_ver >= 2) out->header_bytes += 1 + 1 + out->salt_len + 4 + 1 + 1; /* kdf_id + salt_len + salt + iterations + aead_id + iv_len */
-        out->header_bytes += 2 + 8 + out->iv_len + out->name_len;
-
-        fclose(in);
-        return 0;
-    }
-    /* If we reach here and the magic was not NEW_MAGIC the file is not
-     * supported by this release (legacy formats removed). Return non-zero
-     * so callers can handle migration with older tool versions.
-     */
-    fclose(in);
-    return 1;
-}
 
 /* Encrypt helper that allows specifying the original filename stored in the header
  * (used when re-encrypting a temporary plaintext file but preserving the
@@ -675,18 +371,8 @@ int encrypt_file_with_name(const char *input_file, const char *output_file, cons
 
     unsigned char key[AES_KEY_SIZE], iv[AES_BLOCK_SIZE];
 
-    if (fwrite(NEW_MAGIC, 1, 4, out) != 4) goto write_error2;
-    uint8_t fmt_ver = NEW_FORMAT_VERSION;
-    if (fwrite(&fmt_ver, 1, 1, out) != 1) goto write_error2;
-
-    uint8_t kdf_id = KDF_PBKDF2_HMAC_SHA256;
-    if (fwrite(&kdf_id, 1, 1, out) != 1) goto write_error2;
-    uint8_t salt_len = DEFAULT_SALT_LEN;
-    if (fwrite(&salt_len, 1, 1, out) != 1) goto write_error2;
-
     unsigned char salt[DEFAULT_SALT_LEN];
     if (RAND_bytes(salt, DEFAULT_SALT_LEN) != 1) { fprintf(stderr, "Randomness generation for salt failed.\n"); goto write_error2; }
-    if (fwrite(salt, 1, DEFAULT_SALT_LEN, out) != DEFAULT_SALT_LEN) goto write_error2;
 
     uint32_t iterations = DEFAULT_PBKDF2_ITERS;
     extern uint32_t pbkdf2_iterations;
@@ -696,10 +382,8 @@ int encrypt_file_with_name(const char *input_file, const char *output_file, cons
     itb[1] = (iterations >> 16) & 0xFF;
     itb[2] = (iterations >> 8) & 0xFF;
     itb[3] = iterations & 0xFF;
-    if (fwrite(itb, 1, 4, out) != 4) goto write_error2;
 
-    /* derive key with PBKDF2 (legacy support removed) */
-    if (!PKCS5_PBKDF2_HMAC(password, strlen(password), salt, DEFAULT_SALT_LEN, iterations, EVP_sha256(), AES_KEY_SIZE, key)) {
+    if (!derive_key_pbkdf2(password, salt, DEFAULT_SALT_LEN, iterations, key, AES_KEY_SIZE)) {
         fprintf(stderr, "PBKDF2 derivation failed.\n");
         goto write_error2;
     }
@@ -708,57 +392,29 @@ int encrypt_file_with_name(const char *input_file, const char *output_file, cons
     int aead = selected_aead;
     uint8_t iv_len = AES_BLOCK_SIZE;
     if (aead == AEAD_AES_256_GCM) iv_len = GCM_IV_LEN;
-    uint8_t aead_id = (uint8_t)aead;
-    if (fwrite(&aead_id, 1, 1, out) != 1) goto write_error2;
-    if (fwrite(&iv_len, 1, 1, out) != 1) goto write_error2;
     if (RAND_bytes(iv, iv_len) != 1) goto write_error2;
 
+    aaf_header_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.fmt_ver = NEW_FORMAT_VERSION;
+    hdr.kdf_id = KDF_PBKDF2_HMAC_SHA256;
+    hdr.salt_len = DEFAULT_SALT_LEN;
+    memcpy(hdr.salt, salt, DEFAULT_SALT_LEN);
+    hdr.iterations = iterations;
+    hdr.aead_id = (uint8_t)aead;
+    hdr.iv_len = iv_len;
+    hdr.timestamp = (uint64_t)time(NULL);
     size_t fnlen = header_name ? strlen(header_name) : 0;
     if (fnlen > 65535) fnlen = 65535;
-    uint16_t name_len16 = (uint16_t)fnlen;
-    if (!write_u16_be(out, name_len16)) goto write_error2;
-
-    uint64_t ts = (uint64_t)time(NULL);
-    if (!write_u64_be(out, ts)) goto write_error2;
-
-    if (fwrite(iv, 1, iv_len, out) != iv_len) goto write_error2;
-    if (name_len16 > 0) {
-        if (fwrite(header_name, 1, name_len16, out) != name_len16) goto write_error2;
-    }
-
-    /* Now perform encryption (reuse logic from encrypt_file) */
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    if (!ctx) { fprintf(stderr, "EVP_CIPHER_CTX_new failed\n"); goto write_error2; }
-
-    unsigned char inbuf[1024], outbuf[1040];
-    int inlen, outlen;
+    hdr.name_len = (uint16_t)fnlen;
+    if (hdr.name_len > 0) strncpy(hdr.original_name, header_name, hdr.name_len);
+    memcpy(hdr.iv, iv, hdr.iv_len);
+    if (write_header(out, &hdr) != 0) goto write_error2;
 
     if (aead == AEAD_AES_256_GCM) {
-        if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1) { fprintf(stderr, "EVP_EncryptInit_ex (gcm init) failed\n"); EVP_CIPHER_CTX_free(ctx); goto write_error2; }
-        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL) != 1) { fprintf(stderr, "EVP_CIPHER_CTX_ctrl set ivlen failed\n"); EVP_CIPHER_CTX_free(ctx); goto write_error2; }
-        if (EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) != 1) { fprintf(stderr, "EVP_EncryptInit_ex (gcm key/iv) failed\n"); EVP_CIPHER_CTX_free(ctx); goto write_error2; }
-
-        while ((inlen = fread(inbuf, 1, sizeof(inbuf), in)) > 0) {
-            if (EVP_EncryptUpdate(ctx, outbuf, &outlen, inbuf, inlen) != 1) { fprintf(stderr, "GCM Encryption update failed.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-            if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) { fprintf(stderr, "Write error while writing ciphertext.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-        }
-
-        if (EVP_EncryptFinal_ex(ctx, outbuf, &outlen) != 1) { fprintf(stderr, "GCM Encryption finalization failed.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-        if (outlen > 0) if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) { fprintf(stderr, "Write error while writing final ciphertext.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-
-        unsigned char tag[GCM_TAG_LEN];
-        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, GCM_TAG_LEN, tag) != 1) { fprintf(stderr, "Failed to get GCM tag.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-        if (fwrite(tag, 1, GCM_TAG_LEN, out) != GCM_TAG_LEN) { fprintf(stderr, "Failed to write GCM tag.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-        EVP_CIPHER_CTX_free(ctx);
+        if (aead_encrypt_gcm_stream(key, iv, iv_len, in, out) != 0) goto enc_fail2;
     } else {
-        if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1) { fprintf(stderr, "EVP_EncryptInit_ex failed\n"); EVP_CIPHER_CTX_free(ctx); goto write_error2; }
-        while ((inlen = fread(inbuf, 1, sizeof(inbuf), in)) > 0) {
-            if (EVP_EncryptUpdate(ctx, outbuf, &outlen, inbuf, inlen) != 1) { fprintf(stderr, "Encryption update failed.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-            if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) { fprintf(stderr, "Write error while writing ciphertext.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-        }
-        if (EVP_EncryptFinal_ex(ctx, outbuf, &outlen) != 1) { fprintf(stderr, "Encryption finalization failed.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-        if (fwrite(outbuf, 1, outlen, out) != (size_t)outlen) { fprintf(stderr, "Write error while writing final ciphertext.\n"); EVP_CIPHER_CTX_free(ctx); goto enc_fail2; }
-        EVP_CIPHER_CTX_free(ctx);
+        if (cipher_encrypt_cbc_stream(key, iv, in, out) != 0) goto enc_fail2;
     }
     fclose(in);
     fclose(out);
