@@ -89,8 +89,8 @@ deb: $(BINARY)
 	@echo "Building .deb for $(DEB_ARCH)..."
 	# ensure binary is built (explicit recursive make is clearer in CI)
 	@if [ ! -f "$(BINARY)" ]; then \
-		echo "Binary '$(BINARY)' not found, attempting to build..."; \
-		$(MAKE) $(BINARY) || { echo "Failed to build $(BINARY)"; exit 1; }; \
+		echo "Binary '$(BINARY)' not found, attempting to build (running 'make all')..."; \
+		$(MAKE) all || { echo "Failed to build $(BINARY) via 'make all'"; exit 1; }; \
 	fi
 	mkdir -p $(DEB_DIR)/DEBIAN
 	mkdir -p $(DEB_DIR)/usr/bin

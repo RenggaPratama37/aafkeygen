@@ -124,9 +124,13 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
     hdr.iv_len = iv_len;
     hdr.timestamp = (uint64_t)time(NULL);
     size_t fnlen = strlen(input_file);
-    if (fnlen > 65535) fnlen = 65535;
+    /* cap to fit original_name buffer and ensure null termination */
+    if (fnlen >= sizeof(hdr.original_name)) fnlen = sizeof(hdr.original_name) - 1;
     hdr.name_len = (uint16_t)fnlen;
-    strncpy(hdr.original_name, input_file, hdr.name_len);
+    if (hdr.name_len > 0) {
+        memcpy(hdr.original_name, input_file, hdr.name_len);
+    }
+    hdr.original_name[hdr.name_len] = '\0';
     memcpy(hdr.iv, iv, hdr.iv_len);
     if (write_header(out, &hdr) != 0) goto write_error;
 
@@ -427,9 +431,10 @@ int encrypt_file_with_name(const char *input_file, const char *output_file, cons
     hdr.iv_len = iv_len;
     hdr.timestamp = (uint64_t)time(NULL);
     size_t fnlen = header_name ? strlen(header_name) : 0;
-    if (fnlen > 65535) fnlen = 65535;
+    if (fnlen >= sizeof(hdr.original_name)) fnlen = sizeof(hdr.original_name) - 1;
     hdr.name_len = (uint16_t)fnlen;
-    if (hdr.name_len > 0) strncpy(hdr.original_name, header_name, hdr.name_len);
+    if (hdr.name_len > 0) memcpy(hdr.original_name, header_name, hdr.name_len);
+    hdr.original_name[hdr.name_len] = '\0';
     memcpy(hdr.iv, iv, hdr.iv_len);
     if (write_header(out, &hdr) != 0) goto write_error2;
 
