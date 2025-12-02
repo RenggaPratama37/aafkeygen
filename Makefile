@@ -6,7 +6,10 @@
 
 # --- Project info ---
 NAME        := aafkeygen
-VERSION     := 1.5.4
+VERSION     := $(shell cat VERSION)
+DEB_VERSION := $(shell echo $(VERSION) | sed 's/^v//')
+DEB_DIR_VERSION := $(VERSION)
+
 BINARY      := $(NAME)
 
 SRC_DIR     := src
@@ -24,8 +27,8 @@ ifeq ($(ARCH),aarch64)
 DEB_ARCH := arm64
 endif
 
-DEB_DIR     := $(NAME)_$(VERSION)_$(DEB_ARCH)
-PREFIX      := /usr/local
+DEB_DIR 	:= $(NAME)_$(DEB_DIR_VERSION)_$(DEB_ARCH)
+PREFIX  	:= /usr/local
 
 CC ?= gcc
 
@@ -66,11 +69,14 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 install: $(BINARY)
 	@echo "Installing $(BINARY) to $(PREFIX)/bin ..."
 	sudo install -Dm755 $(BINARY) $(PREFIX)/bin/$(BINARY)
+	sudo install -Dm644 VERSION $(PREFIX)/share/$(BINARY)/VERSION
+
 
 # --- Uninstall binary ---
 uninstall:
 	@echo "Removing $(BINARY) from system..."
 	sudo rm -f $(PREFIX)/bin/$(BINARY)
+	sudo rm -rf $(PREFIX)/share/$(BINARY)
 
 # --- Clean build ---
 clean:
@@ -79,11 +85,20 @@ clean:
 
 # --- Build .deb package ---
 deb: $(BINARY)
-	@echo "Building Debian package for arch: $(DEB_ARCH)"
+	@echo "Building .deb for $(DEB_ARCH)..."
 	mkdir -p $(DEB_DIR)/DEBIAN
 	mkdir -p $(DEB_DIR)/usr/bin
+	mkdir -p $(DEB_DIR)/usr/share/$(NAME)
+
+	sed -e "s/@VERSION@/$(DEB_VERSION)/" \
+        -e "s/@ARCH@/$(DEB_ARCH)/" \
+        debian/control > $(DEB_DIR)/DEBIAN/control
+
 	cp $(BINARY) $(DEB_DIR)/usr/bin/
-	cp debian/* $(DEB_DIR)/DEBIAN/
+	cp VERSION $(DEB_DIR)/usr/share/$(NAME)/VERSION
+	cp debian/postinst $(DEB_DIR)/DEBIAN/ 2>/dev/null || true
+	cp debian/prerm $(DEB_DIR)/DEBIAN/ 2>/dev/null || true
+
 	chmod 755 $(DEB_DIR)/DEBIAN/postinst || true
 	dpkg-deb --build $(DEB_DIR)
 	@echo "✅ Package built: $(DEB_DIR).deb"

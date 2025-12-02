@@ -111,7 +111,11 @@ int main(int argc, char *argv[]) {
             decrypt = 1; /* treat as decrypt but handled specially below */
             /* mark a special flag via random_name variable to indicate temp mode */
             random_name = 2; /* 2 = temp-decrypt mode */
-        } else {
+        } else if(!strcmp(argv[i], "-v") || !strcmp(argv[i], "--version")) {
+            printf("AAFKeygen %s\n", get_version_string());
+            return 0;
+
+        }else {
             fprintf(stderr, "[X] Unknown argument: %s\n", argv[i]);
             return 1;
         }
