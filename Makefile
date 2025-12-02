@@ -37,7 +37,7 @@ LIBS   := -lcrypto
 # ================================
 
 # All C files
-SRCS := $(shell find $(SRC_DIR) -maxdepth 1 -type f -name '*.c')
+SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 
@@ -62,7 +62,7 @@ all: $(BINARY)
 # ================================
 $(BINARY): $(OBJS)
 	@echo "Linking $(BINARY)..."
-	$(CC) -o $@ $^ $(LIBS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 # ================================
 # Compile objects
