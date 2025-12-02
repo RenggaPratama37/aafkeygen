@@ -38,6 +38,14 @@ SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 
+# Static library for crypto engine to be reused by other projects
+LIB_OBJS := $(BUILD_DIR)/crypto.o $(BUILD_DIR)/header.o $(BUILD_DIR)/kdf.o $(BUILD_DIR)/aead.o $(BUILD_DIR)/cipher.o
+
+# Build static library
+libaafcrypto.a: $(LIB_OBJS)
+	@echo "Creating static library $@"
+	@ar rcs $@ $^
+
 # --- Default rule ---
 all: $(BINARY)
 

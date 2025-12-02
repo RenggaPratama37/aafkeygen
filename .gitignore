@@ -2,6 +2,7 @@
 aafkeygen
 build/
 *.o
+*.a
 *.deb
 aafkeygen_*/
 
