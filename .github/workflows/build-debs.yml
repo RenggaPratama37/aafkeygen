@@ -44,8 +44,13 @@ jobs:
                 set -euo pipefail
                 apt-get update
                 apt-get install -y build-essential libssl-dev dpkg-dev ca-certificates
+                set -x
                 make clean || true
-                make ARCH=aarch64
+                make ARCH=aarch64 || { echo 'make failed'; ls -la; exit 1; }
+                echo '--- build dir ---'; ls -la /src || true
+                echo '--- build artifacts ---'; ls -la /src/build || true
+                if [ ! -f /src/aafkeygen ]; then echo 'Binary not built:'; ls -la /src; exit 2; fi
+                file /src/aafkeygen || true
                 mkdir -p /src/artifacts/aafkeygen_${REF_NAME}_arm64/usr/bin
                 cp aafkeygen /src/artifacts/aafkeygen_${REF_NAME}_arm64/usr/bin/
                 cp -r debian /src/artifacts/aafkeygen_${REF_NAME}_arm64/DEBIAN || true
@@ -55,11 +60,15 @@ jobs:
           else
 
             # Native AMD64 build on the GitHub runner
+            set -x
             make clean || true
-            make ARCH=x86_64
+            make ARCH=x86_64 || { echo 'make failed'; ls -la; exit 1; }
+            echo '--- workspace ---'; ls -la
+            echo '--- build dir ---'; ls -la build || true
 
             # Prepare .deb directory structure and copy artifacts
             mkdir -p artifacts/aafkeygen_${REF_NAME}_amd64/usr/bin
+            if [ ! -f aafkeygen ]; then echo 'Binary missing after build'; ls -la; exit 2; fi
             cp aafkeygen artifacts/aafkeygen_${REF_NAME}_amd64/usr/bin/
             cp -r debian artifacts/aafkeygen_${REF_NAME}_amd64/DEBIAN || true
             dpkg-deb --build artifacts/aafkeygen_${REF_NAME}_amd64
