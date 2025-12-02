@@ -1,5 +1,5 @@
 Package: aafkeygen
-Version: 1.5.4
+Version: @VERSION@
 Section: utils
 Priority: optional
 Architecture: all

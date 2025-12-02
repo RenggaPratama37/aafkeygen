@@ -26,5 +26,6 @@ int encrypt_file_with_name(const char *input_file, const char *output_file, cons
 /* Globals controlled by main.c to influence KDF behavior */
 extern uint32_t pbkdf2_iterations;
 extern int selected_aead;
+extern int aead_specified;
 
 #endif

@@ -124,9 +124,13 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
     hdr.iv_len = iv_len;
     hdr.timestamp = (uint64_t)time(NULL);
     size_t fnlen = strlen(input_file);
-    if (fnlen > 65535) fnlen = 65535;
+    /* cap to fit original_name buffer and ensure null termination */
+    if (fnlen >= sizeof(hdr.original_name)) fnlen = sizeof(hdr.original_name) - 1;
     hdr.name_len = (uint16_t)fnlen;
-    strncpy(hdr.original_name, input_file, hdr.name_len);
+    if (hdr.name_len > 0) {
+        memcpy(hdr.original_name, input_file, hdr.name_len);
+    }
+    hdr.original_name[hdr.name_len] = '\0';
     memcpy(hdr.iv, iv, hdr.iv_len);
     if (write_header(out, &hdr) != 0) goto write_error;
 
@@ -229,6 +233,28 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
     if (fmt_ver >= 2) {
         if (fread(&aead_id, 1, 1, in) != 1) { fclose(in); return 1; }
         if (fread(&iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
+    }
+
+    /* If the user explicitly requested an AEAD via CLI, enforce it matches the header.
+     * We prefer to read the `AAF_AEAD` environment variable (set by main.c when
+     * the user supplied `--aead`) rather than relying on fragile globals across
+     * translation units. */
+    const char *env_aead = getenv("AAF_AEAD");
+    if (env_aead) {
+        /* debug write to file to observe env and header values during tests */
+        FILE *dbg = fopen("/tmp/aaf_dbg.txt", "a");
+        if (dbg) {
+            fprintf(dbg, "env_aead=%s header_aead=%u\n", env_aead, aead_id);
+            fclose(dbg);
+        }
+        int requested = AEAD_NONE;
+        if (strcmp(env_aead, "gcm") == 0) requested = AEAD_AES_256_GCM;
+        else if (strcmp(env_aead, "chacha20") == 0) requested = AEAD_CHACHA20_POLY1305;
+        if (requested != AEAD_NONE && requested != (int)aead_id) {
+            fprintf(stderr, "AEAD mismatch: header uses id %u but requested %d\n", aead_id, requested);
+            fclose(in);
+            return 1;
+        }
     }
 
     uint16_t name_len16 = 0;
@@ -405,9 +431,10 @@ int encrypt_file_with_name(const char *input_file, const char *output_file, cons
     hdr.iv_len = iv_len;
     hdr.timestamp = (uint64_t)time(NULL);
     size_t fnlen = header_name ? strlen(header_name) : 0;
-    if (fnlen > 65535) fnlen = 65535;
+    if (fnlen >= sizeof(hdr.original_name)) fnlen = sizeof(hdr.original_name) - 1;
     hdr.name_len = (uint16_t)fnlen;
-    if (hdr.name_len > 0) strncpy(hdr.original_name, header_name, hdr.name_len);
+    if (hdr.name_len > 0) memcpy(hdr.original_name, header_name, hdr.name_len);
+    hdr.original_name[hdr.name_len] = '\0';
     memcpy(hdr.iv, iv, hdr.iv_len);
     if (write_header(out, &hdr) != 0) goto write_error2;
 

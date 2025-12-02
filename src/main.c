@@ -8,6 +8,32 @@
 #include "password_input.h"
 #include "utils.h"
 
+/* Whether the user explicitly requested an AEAD algorithm via CLI (--aead) */
+int aead_specified = 0;
+
+typedef struct{
+    int exist;
+    const char *extension;
+    int is_aaf;
+} CheckInput;
+
+CheckInput check_input(const char *input_file){
+    CheckInput result = {0,NULL, 0};
+    FILE *f = fopen(input_file, "rb");
+    if(f != NULL){
+        result.exist = 1;
+        fclose(f);
+    }
+    const char *extension = strrchr(input_file, '.');
+    if (extension != NULL){
+        result.extension = extension;
+        if(strcmp(extension, ".aaf") == 0){
+            result.is_aaf =1;
+        }
+    }
+    return result;
+}
+
 static void random_string(char *buf, size_t len) {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     unsigned char rnd[len];
@@ -35,6 +61,10 @@ int main(int argc, char *argv[]) {
     extern uint32_t pbkdf2_iterations;
     /* set defaults for crypto KDF globals */
     pbkdf2_iterations = 0;
+    /* aead selection globals */
+    extern int selected_aead;
+    extern int aead_specified;
+    aead_specified = 0;
 
     if (argc < 2) {
         print_help();
@@ -81,27 +111,68 @@ int main(int argc, char *argv[]) {
             decrypt = 1; /* treat as decrypt but handled specially below */
             /* mark a special flag via random_name variable to indicate temp mode */
             random_name = 2; /* 2 = temp-decrypt mode */
-        } else {
+        } else if(!strcmp(argv[i], "-v") || !strcmp(argv[i], "--version")) {
+            printf("AAFKeygen %s\n", get_version_string());
+            return 0;
+
+        }else {
             fprintf(stderr, "[X] Unknown argument: %s\n", argv[i]);
             return 1;
         }
 
     }
 
-    password = read_password("[Authenticated Access File] Password: ");
+    char default_output[256];
 
-    if (!input_file || !password || (!encrypt && !decrypt)) {
+    /* validate arguments presence first */
+    if (!input_file || (!encrypt && !decrypt)) {
         print_help();
         return 1;
     }
 
-    char default_output[256];
-
-    if(access(input_file, F_OK) != 0){
-        fprintf(stderr, "[X] File not found %s\n", input_file);
+    /* check file existence and extension rules before prompting for password */
+    CheckInput info = check_input(input_file);
+    if (!info.exist) {
+        fprintf(stderr, "[X] File not found: %s\n", input_file);
         return 1;
     }
 
+    if (encrypt) {
+        if (info.is_aaf) {
+            fprintf(stderr, "[X] Refusing to encrypt: '%s' already has .aaf extension\n", input_file);
+            return 1;
+        }
+    }
+
+    if (decrypt) {
+        if (!info.is_aaf) {
+            fprintf(stderr, "[X] Refusing to decrypt: '%s' is not a .aaf file\n", input_file);
+            return 1;
+        }
+    }
+
+    /* Do not allow explicitly selecting AEAD when decrypting: algorithm is stored in the file header */
+    if (decrypt && aead_flag) {
+        fprintf(stderr, "[X] --aead is only valid for encryption; when decrypting the algorithm is read from the file header\n");
+        return 1;
+    }
+
+    /* now prompt for password */
+    password = read_password("[Authenticated Access File] Password: ");
+
+
+    /* Apply AEAD selection if user provided --aead or --force-aead */
+    if (aead_flag && aead_name) {
+        aead_specified = 1;
+        if (!strcmp(aead_name, "gcm")) selected_aead = AEAD_AES_256_GCM;
+        else if (!strcmp(aead_name, "chacha20")) selected_aead = AEAD_CHACHA20_POLY1305;
+        /* also export requested AEAD in environment so other translation units
+         * can reliably observe the user's explicit request without depending
+         * on fragile globals across objects. This avoids issues when modules
+         * inspect the selection during decrypt. */
+        if (!strcmp(aead_name, "gcm")) setenv("AAF_AEAD", "gcm", 1);
+        else if (!strcmp(aead_name, "chacha20")) setenv("AAF_AEAD", "chacha20", 1);
+    }
 
     if (encrypt) {
         if (random_name) {
@@ -115,14 +186,9 @@ int main(int argc, char *argv[]) {
         }
 
         printf("[+] Encrypting '%s' → '%s'\n", input_file, output_file);
-        /* export iteration and aead flags to crypto module globals */
+        /* export iteration flag to crypto module globals */
         extern uint32_t pbkdf2_iterations;
-        extern int selected_aead;
         pbkdf2_iterations = iterations_flag;
-        if (aead_flag && aead_name) {
-            if (!strcmp(aead_name, "gcm")) selected_aead = AEAD_AES_256_GCM;
-            else if (!strcmp(aead_name, "chacha20")) selected_aead = AEAD_CHACHA20_POLY1305;
-        }
         if (encrypt_file(input_file, output_file, password) == 0) {
             printf("✅ Encryption complete: %s\n", output_file);
             if (!keep) {
@@ -140,7 +206,8 @@ int main(int argc, char *argv[]) {
         if (ilen > 4 && strcmp(input_file + ilen - 4, ".aaf") == 0){
             snprintf(default_output, sizeof(default_output), "%.*s", (int)(ilen - 4), input_file);
         } else {
-            snprintf(default_output, sizeof(default_output),"%s.dec", input_file);
+            fprintf(stderr, "%s is not .aaf file\n", input_file);
+            return 1;
         }
         if (!output_file) output_file = default_output;
 
@@ -151,6 +218,8 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "[x] Temp-decrypt failed.\n");
             }
         } else {
+            fprintf(stderr, "DEBUG: decrypt=%d aead_flag=%d aead_name=%s aead_specified=%d selected_aead=%d\n",
+                    decrypt, aead_flag, aead_name ? aead_name : "(null)", aead_specified, selected_aead);
             printf("[+] Decrypting '%s' → '%s'\n", input_file, output_file);
             if (decrypt_file(input_file, output_file, password) == 0) {
                 printf("✅ Decryption complete: %s\n", output_file);
