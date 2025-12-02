@@ -231,6 +231,28 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
         if (fread(&iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
     }
 
+    /* If the user explicitly requested an AEAD via CLI, enforce it matches the header.
+     * We prefer to read the `AAF_AEAD` environment variable (set by main.c when
+     * the user supplied `--aead`) rather than relying on fragile globals across
+     * translation units. */
+    const char *env_aead = getenv("AAF_AEAD");
+    if (env_aead) {
+        /* debug write to file to observe env and header values during tests */
+        FILE *dbg = fopen("/tmp/aaf_dbg.txt", "a");
+        if (dbg) {
+            fprintf(dbg, "env_aead=%s header_aead=%u\n", env_aead, aead_id);
+            fclose(dbg);
+        }
+        int requested = AEAD_NONE;
+        if (strcmp(env_aead, "gcm") == 0) requested = AEAD_AES_256_GCM;
+        else if (strcmp(env_aead, "chacha20") == 0) requested = AEAD_CHACHA20_POLY1305;
+        if (requested != AEAD_NONE && requested != (int)aead_id) {
+            fprintf(stderr, "AEAD mismatch: header uses id %u but requested %d\n", aead_id, requested);
+            fclose(in);
+            return 1;
+        }
+    }
+
     uint16_t name_len16 = 0;
     if (!read_u16_be(in, &name_len16)) { fclose(in); return 1; }
 
