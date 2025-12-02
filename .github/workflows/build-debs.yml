@@ -16,28 +16,60 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Enable QEMU so we can run ARM64 containers on x86_64 GitHub runners
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v2
+
+      # Install dependencies for native AMD64 builds.
+      # ARM64 builds install dependencies inside the Docker container instead.
+      - name: Install dependencies (amd64)
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev dpkg-dev
 
       - name: Build project and package .deb
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+
           if [ "${{ matrix.arch }}" = "arm64" ]; then
-            # Build inside an emulated arm64 container so native arm64 libs/headers are available
-            docker run --rm --platform linux/arm64 -v "${PWD}":/src -w /src ubuntu:24.04 bash -lc "set -euo pipefail; apt-get update; apt-get install -y build-essential libssl-dev dpkg-dev ca-certificates; make clean || true; make ARCH=aarch64; mkdir -p /src/artifacts/aafkeygen_${REF_NAME}_arm64/usr/bin; cp aafkeygen /src/artifacts/aafkeygen_${REF_NAME}_arm64/usr/bin/; cp -r debian /src/artifacts/aafkeygen_${REF_NAME}_arm64/DEBIAN || true; dpkg-deb --build /src/artifacts/aafkeygen_${REF_NAME}_arm64"
+
+            # Build for ARM64 inside an emulated ARM64 Ubuntu container.
+            # This ensures proper ARM64 OpenSSL and system headers.
+            docker run --rm --platform linux/arm64 \
+              -v "${PWD}":/src -w /src ubuntu:24.04 \
+              bash -lc "
+                set -euo pipefail
+                apt-get update
+                apt-get install -y build-essential libssl-dev dpkg-dev ca-certificates
+                make clean || true
+                make ARCH=aarch64
+                mkdir -p /src/artifacts/aafkeygen_${REF_NAME}_arm64/usr/bin
+                cp aafkeygen /src/artifacts/aafkeygen_${REF_NAME}_arm64/usr/bin/
+                cp -r debian /src/artifacts/aafkeygen_${REF_NAME}_arm64/DEBIAN || true
+                dpkg-deb --build /src/artifacts/aafkeygen_${REF_NAME}_arm64
+              "
+
           else
+
+            # Native AMD64 build on the GitHub runner
             make clean || true
             make ARCH=x86_64
+
+            # Prepare .deb directory structure and copy artifacts
             mkdir -p artifacts/aafkeygen_${REF_NAME}_amd64/usr/bin
             cp aafkeygen artifacts/aafkeygen_${REF_NAME}_amd64/usr/bin/
             cp -r debian artifacts/aafkeygen_${REF_NAME}_amd64/DEBIAN || true
             dpkg-deb --build artifacts/aafkeygen_${REF_NAME}_amd64
+
           fi
 
+      # Upload generated .deb files for each architecture
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: debs-${{ matrix.arch }}
           path: artifacts/*.deb
+
