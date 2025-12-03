@@ -1,8 +1,8 @@
 Package: aafkeygen
-Version: 1.5.4
+Version: @VERSION@
 Section: utils
 Priority: optional
-Architecture: all
+Architecture: @ARCH@
 Depends: libc6, libssl3
 Maintainer: Rengga Rona Pratama <renggaronapratama@gmail.com>
 Description: AAFKeygen - Authenticated Access File encryptor for Linux
