@@ -7,7 +7,7 @@
 # --- Project info ---
 NAME        := aafkeygen
 VERSION     := $(shell cat VERSION)
-DEB_VERSION := $(shell echo $(VERSION) | sed 's/^v//')
+DEB_VERSION := $(shell echo $(VERSION) | sed 's/^/v/')
 BINARY      := $(NAME)
 
 SRC_DIR     := src
@@ -25,7 +25,7 @@ ifeq ($(ARCH),aarch64)
 DEB_ARCH := arm64
 endif
 
-DEB_DIR        := $(NAME)_$(DEB_DIR_VERSION)_$(DEB_ARCH)
+DEB_DIR        := $(NAME)_$(DEB_VERSION)_$(DEB_ARCH)
 PREFIX         := /usr/local
 
 CC ?= gcc
@@ -80,7 +80,7 @@ deb: $(BINARY)
 	mkdir -p $(DEB_DIR)/usr/bin
 	mkdir -p $(DEB_DIR)/usr/share/$(NAME)
 
-	sed -e "s/@VERSION@/$(DEB_VERSION)/" \
+	sed -e "s/@VERSION@/$(VERSION)/" \
         -e "s/@ARCH@/$(DEB_ARCH)/" \
         debian/control > $(DEB_DIR)/DEBIAN/control
 
