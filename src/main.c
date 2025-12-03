@@ -51,7 +51,7 @@ static void random_string(char *buf, size_t len) {
 }
 
 int main(int argc, char *argv[]) {
-    const char *input_file = NULL, *output_file = NULL, *password = NULL;
+    const char *input_file = NULL, *output_file = NULL;
     int encrypt = 0, decrypt = 0, keep = 0, random_name = 0;
     uint32_t iterations_flag = 0;
     int aead_flag = 0; /* 0 = not specified -> default AEAD */
@@ -157,8 +157,35 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* now prompt for password */
-    password = read_password("[Authenticated Access File] Password: ");
+    char *password = NULL;
+    char *password_confirm = NULL;
+
+    if (encrypt) {
+        password = read_password("Enter password for encryption: ");
+        if (!password) {
+            fprintf(stderr, "[X] Password input failed.\n");
+            return 1;
+        }
+        password_confirm = read_password("Confirm password: ");
+        if (!password_confirm) {
+            fprintf(stderr, "[X] Password confirmation input failed.\n");
+            free(password);
+            return 1;
+        }
+        if (strcmp(password, password_confirm) != 0) {
+            fprintf(stderr, "[X] Passwords do not match.\n");
+            free(password);
+            free(password_confirm);
+            return 1;
+        }
+        free(password_confirm);
+    } else if (decrypt) {
+        password = read_password("Enter password for decryption: ");
+        if (!password) {
+            fprintf(stderr, "[X] Password input failed.\n");
+            return 1;
+        }
+    }
 
 
     /* Apply AEAD selection if user provided --aead or --force-aead */
