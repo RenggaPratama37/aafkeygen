@@ -210,7 +210,16 @@ int main(int argc, char *argv[]) {
         } else if (!output_file) {
             snprintf(default_output, sizeof(default_output), "%s.aaf", input_file);
             output_file = default_output;
-        }
+        } else{
+            // Force extension .aaf if not exist
+            const char *format = strrchr(output_file, '.');
+            if (!format || strcmp(format, ".aaf") !=0){
+                static char forced_name[300];
+                snprintf(forced_name, sizeof(forced_name),"%s.aaf", output_file);
+                output_file = forced_name;
+            }
+        }                
+
 
         printf("[+] Encrypting '%s' → '%s'\n", input_file, output_file);
         /* export iteration flag to crypto module globals */
