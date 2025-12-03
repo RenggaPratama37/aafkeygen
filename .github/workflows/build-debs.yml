@@ -16,69 +16,79 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Enable QEMU so we can run ARM64 containers on x86_64 GitHub runners
+      # --- Generate numeric version ---
+      - name: Generate VERSION file
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+          echo "${GITHUB_REF_NAME#v}" > VERSION
+          exit 0
+          fi
+
+          if [[ -f VERSION ]]; then
+          echo "Using VERSION from repository:"
+          cat VERSION
+          exit 0
+          fi
+        
+          echo "0.0.$(git rev-list --count HEAD)" > VERSION
+          echo "Fallback VERSION:"
+          cat VERSION
+
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v2
 
-      # Install dependencies for native AMD64 builds.
-      # ARM64 builds install dependencies inside the Docker container instead.
-      - name: Install dependencies (amd64)
-        if: matrix.arch == 'amd64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev dpkg-dev
-
+      # --- Build & Package ---
       - name: Build project and package .deb
         env:
+          VERSION: ${{ steps.VERSION.outputs.version }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
+          VERSION=$(cat VERSION)
+          ARCH="${{ matrix.arch }}"
 
-            # Build for ARM64 inside an emulated ARM64 Ubuntu container.
-            # This ensures proper ARM64 OpenSSL and system headers.
+          echo "Building for ARCH=$ARCH VERSION=$VERSION"
+
+          # Prepare control file with replaced placeholders
+          mkdir -p debian-out
+          sed \
+            -e "s/@VERSION@/$VERSION/" \
+            -e "s/@ARCH@/$ARCH/" \
+            debian/control > debian-out/control
+
+          # Which directory to build into
+          PKG_DIR="artifacts/aafkeygen_v${VERSION}_${ARCH}"
+          mkdir -p "$PKG_DIR/DEBIAN" "$PKG_DIR/usr/bin" "$PKG_DIR/usr/share/aafkeygen"
+
+          # ARCH routing
+          if [ "$ARCH" = "arm64" ]; then
             docker run --rm --platform linux/arm64 \
-              -v "${PWD}":/src -w /src ubuntu:24.04 \
-              bash -lc "
+              -v "${PWD}":/src -w /src ubuntu:24.04 bash -lc "
                 set -euo pipefail
                 apt-get update
                 apt-get install -y build-essential libssl-dev dpkg-dev ca-certificates
-                set -x
                 make clean || true
-                make ARCH=aarch64 || { echo 'make failed'; ls -la; exit 1; }
-                echo '--- build dir ---'; ls -la /src || true
-                echo '--- build artifacts ---'; ls -la /src/build || true
-                if [ ! -f /src/aafkeygen ]; then echo 'Binary not built:'; ls -la /src; exit 2; fi
-                file /src/aafkeygen || true
-                mkdir -p /src/artifacts/aafkeygen_${REF_NAME}_arm64/usr/bin
-                cp aafkeygen /src/artifacts/aafkeygen_${REF_NAME}_arm64/usr/bin/
-                cp -r debian /src/artifacts/aafkeygen_${REF_NAME}_arm64/DEBIAN || true
-                dpkg-deb --build /src/artifacts/aafkeygen_${REF_NAME}_arm64
+                make ARCH=aarch64
               "
-
           else
-
-            # Native AMD64 build on the GitHub runner
-            set -x
             make clean || true
-            make ARCH=x86_64 || { echo 'make failed'; ls -la; exit 1; }
-            echo '--- workspace ---'; ls -la
-            echo '--- build dir ---'; ls -la build || true
-
-            # Prepare .deb directory structure and copy artifacts
-            mkdir -p artifacts/aafkeygen_${REF_NAME}_amd64/usr/bin
-            if [ ! -f aafkeygen ]; then echo 'Binary missing after build'; ls -la; exit 2; fi
-            cp aafkeygen artifacts/aafkeygen_${REF_NAME}_amd64/usr/bin/
-            cp -r debian artifacts/aafkeygen_${REF_NAME}_amd64/DEBIAN || true
-            dpkg-deb --build artifacts/aafkeygen_${REF_NAME}_amd64
-
+            make ARCH=x86_64
           fi
 
-      # Upload generated .deb files for each architecture
+          # Copy files
+          cp debian-out/control "$PKG_DIR/DEBIAN/control"
+          cp aafkeygen "$PKG_DIR/usr/bin/aafkeygen"
+          cp VERSION "$PKG_DIR/usr/share/aafkeygen/VERSION"
+
+          echo "Building .deb..."
+          dpkg-deb --build "$PKG_DIR"
+
+          echo "Done → $PKG_DIR.deb"
+
+      # --- Upload output ---
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: debs-${{ matrix.arch }}
           path: artifacts/*.deb
-

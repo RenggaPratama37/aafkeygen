@@ -53,5 +53,7 @@ const char* get_version_string() {
 
     // strip newline
     ver[strcspn(ver, "\n")] = '\0';
-    return ver;
+    static char out[70];
+    snprintf(out, sizeof(out), "v%s", ver);
+    return out;
 }
