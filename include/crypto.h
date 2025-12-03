@@ -16,31 +16,8 @@
 #define NEW_MAGIC "AAF4"
 #define NEW_FORMAT_VERSION 2
 
-/* Parsed header structure for callers that want to inspect metadata without
- * crypto printing anything. All fields are populated when parse_header()
- * returns 0. Salt is limited to 64 bytes here for simplicity.
- */
-#define MAX_SALT_LEN 64
-typedef struct {
-	char magic[5];
-	uint8_t fmt_ver;
-	uint8_t kdf_id;
-	uint8_t salt_len;
-	unsigned char salt[MAX_SALT_LEN];
-	uint32_t iterations;
-	uint8_t aead_id;
-	uint8_t iv_len;
-	uint16_t name_len;
-	uint64_t timestamp;
-	char original_name[256];
-	uint8_t iv[16]; 
-	size_t header_bytes;
-} aaf_header_t;
-
-/* Parse header metadata without producing any printed output. Returns 0 on
- * success and non-zero on failure. The caller may inspect errno for details.
- */
-int parse_header(const char *input_file, aaf_header_t *out);
+/* Header parsing is provided by include/header.h */
+#include "header.h"
 
 int encrypt_file(const char *input_file, const char *output_file, const char *password);
 int decrypt_file(const char *input_file, const char *output_file, const char *password);
