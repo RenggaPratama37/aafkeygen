@@ -34,22 +34,6 @@ CheckInput check_input(const char *input_file){
     return result;
 }
 
-static void random_string(char *buf, size_t len) {
-    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    unsigned char rnd[len];
-    if (len == 0) return;
-    if (RAND_bytes(rnd, (int)len) != 1) {
-        /* fallback to simple pseudo-randomness, unlikely */
-        for (size_t i = 0; i < len - 1; i++) buf[i] = charset[rand() % (sizeof(charset) - 1)];
-        buf[len - 1] = '\0';
-        return;
-    }
-    for (size_t i = 0; i < len - 1; i++) {
-        buf[i] = charset[rnd[i] % (sizeof(charset) - 1)];
-    }
-    buf[len - 1] = '\0';
-}
-
 int main(int argc, char *argv[]) {
     const char *input_file = NULL, *output_file = NULL;
     int encrypt = 0, decrypt = 0, keep = 0, random_name = 0;
