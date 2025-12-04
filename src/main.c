@@ -162,23 +162,15 @@ int main(int argc, char *argv[]) {
 
     if (encrypt) {
         password = read_password("Enter password for encryption: ");
-        if (!password) {
-            fprintf(stderr, "[X] Password input failed.\n");
-            return 1;
-        }
-        password_confirm = read_password("Confirm password: ");
-        if (!password_confirm) {
-            fprintf(stderr, "[X] Password confirmation input failed.\n");
-            free(password);
-            return 1;
-        }
-        if (strcmp(password, password_confirm) != 0) {
-            fprintf(stderr, "[X] Passwords do not match.\n");
-            free(password);
+        while (1){
+            password_confirm = read_password("Confirm password: ");
+            if (strcmp(password, password_confirm) == 0){
+                free(password_confirm);
+                break;
+            }
+            printf("[x] Passwords do not match. Try Again.\n");
             free(password_confirm);
-            return 1;
         }
-        free(password_confirm);
     } else if (decrypt) {
         password = read_password("Enter password for decryption: ");
         if (!password) {
