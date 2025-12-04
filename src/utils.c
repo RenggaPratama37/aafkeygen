@@ -1,6 +1,7 @@
 #include "utils.h"
 #include <stdio.h>
 #include <string.h>
+#include <openssl/rand.h>
 
 void print_usage() {
     printf("Usage:\n");
@@ -56,4 +57,20 @@ const char* get_version_string() {
     static char out[70];
     snprintf(out, sizeof(out), "v%s", ver);
     return out;
+}
+
+void random_string(char *buf, size_t len) {
+    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    unsigned char rnd[len];
+    if (len == 0) return;
+    if (RAND_bytes(rnd, (int)len) != 1) {
+        /* fallback to simple pseudo-randomness, unlikely */
+        for (size_t i = 0; i < len - 1; i++) buf[i] = charset[rand() % (sizeof(charset) - 1)];
+        buf[len - 1] = '\0';
+        return;
+    }
+    for (size_t i = 0; i < len - 1; i++) {
+        buf[i] = charset[rnd[i] % (sizeof(charset) - 1)];
+    }
+    buf[len - 1] = '\0';
 }
