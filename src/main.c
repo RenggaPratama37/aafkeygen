@@ -237,7 +237,20 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "%s is not .aaf file\n", input_file);
             return 1;
         }
-        if (!output_file) output_file = default_output;
+
+        /* If user didn't provide -o, prefer the original filename stored in
+         * the AAF header. parse_header() is non-verbose and returns metadata
+         * including the original name when present. Fall back to trimming
+         * the .aaf extension when header has no name. */
+        if (!output_file) {
+            aaf_header_t hdr;
+            if (parse_header(input_file, &hdr) == 0 && hdr.name_len > 0) {
+                /* use name from header */
+                output_file = hdr.original_name;
+            } else {
+                output_file = default_output;
+            }
+        }
 
         /* temp-decrypt mode (simple prompt-based) when random_name==2 */
         if (random_name == 2) {
