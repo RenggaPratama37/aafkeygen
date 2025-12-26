@@ -9,32 +9,12 @@
 #include "utils.h"
 #include "flags.h"
 #include "compress.h"
+#include "filecheck.h"
 
 /* Whether the user explicitly requested an AEAD algorithm via CLI (--aead) */
 int aead_specified = 0;
 
-typedef struct{
-    int exist;
-    const char *extension;
-    int is_aaf;
-} CheckInput;
-
-CheckInput check_input(const char *input_file){
-    CheckInput result = {0,NULL, 0};
-    FILE *f = fopen(input_file, "rb");
-    if(f != NULL){
-        result.exist = 1;
-        fclose(f);
-    }
-    const char *extension = strrchr(input_file, '.');
-    if (extension != NULL){
-        result.extension = extension;
-        if(strcmp(extension, ".aaf") == 0){
-            result.is_aaf =1;
-        }
-    }
-    return result;
-}
+/* file checking and format detection are provided by src/filecheck.c */
 
 int main(int argc, char *argv[]) {
 
@@ -82,24 +62,22 @@ int main(int argc, char *argv[]) {
     }
 
     /* check file existence and extension rules before prompting for password */
-    CheckInput info = check_input(args.input_file);
+    FileInfo info = {0};
+    if (file_check(args.input_file, &info) != 0) {
+        fprintf(stderr, "[X] Failed to stat or read: %s\n", args.input_file);
+        return 1;
+    }
     if (!info.exist) {
         fprintf(stderr, "[X] File not found: %s\n", args.input_file);
         return 1;
     }
-
-    if (args.encrypt) {
-        if (info.is_aaf) {
-            fprintf(stderr, "[X] Refusing to encrypt: '%s' already has .aaf extension\n", args.input_file);
-            return 1;
-        }
+    if (args.encrypt && info.is_aaf) {
+        fprintf(stderr, "[X] Refusing to encrypt: '%s' already appears to be an .aaf file\n", args.input_file);
+        return 1;
     }
-
-    if (args.decrypt) {
-        if (!info.is_aaf) {
-            fprintf(stderr, "[X] Refusing to decrypt: '%s' is not a .aaf file\n", args.input_file);
-            return 1;
-        }
+    if (args.decrypt && !info.is_aaf) {
+        fprintf(stderr, "[X] Refusing to decrypt: '%s' does not appear to be an .aaf file\n", args.input_file);
+        return 1;
     }
 
     /* Do not allow explicitly selecting AEAD when decrypting: algorithm is stored in the file header */
