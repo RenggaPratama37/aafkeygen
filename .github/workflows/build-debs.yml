@@ -67,7 +67,7 @@ jobs:
               -v "${PWD}":/src -w /src ubuntu:24.04 bash -lc "
                 set -euo pipefail
                 apt-get update
-                apt-get install -y build-essential libssl-dev dpkg-dev ca-certificates
+                apt-get install -y build-essential libssl-dev dpkg-dev ca-certificates zlib1g-dev
                 make clean || true
                 make ARCH=aarch64
               "
