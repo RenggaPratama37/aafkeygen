@@ -8,6 +8,7 @@
 NAME        := aafkeygen
 VERSION     := $(shell cat VERSION)
 DEB_VERSION := $(shell echo $(VERSION) | sed 's/^/v/')
+LIBNAME     := libaafcrypto.a
 BINARY      := $(NAME)
 
 SRC_DIR     := src
@@ -37,15 +38,23 @@ LIBS        := -lcrypto -lz
 # --- Source files ---
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
+
+# Engine object selection (static library)
+ENGINE_OBJS := $(BUILD_DIR)/crypto.o $(BUILD_DIR)/aead.o $(BUILD_DIR)/cipher.o $(BUILD_DIR)/kdf.o $(BUILD_DIR)/header.o $(BUILD_DIR)/compress.o
+REMAIN_OBJS := $(filter-out $(ENGINE_OBJS), $(OBJS))
 DEPS := $(OBJS:.o=.d)
 
 # --- Default rule ---
 all: $(BINARY)
 
 # --- Build binary ---
-$(BINARY): $(OBJS)
+$(LIBNAME): $(ENGINE_OBJS)
+	@echo "Archiving engine -> $(LIBNAME)..."
+	ar rcs $@ $^
+
+$(BINARY): $(LIBNAME) $(REMAIN_OBJS)
 	@echo "Linking $(BINARY)..."
-	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+	$(CC) $(CFLAGS) -o $@ $(REMAIN_OBJS) $(LIBNAME) $(LIBS)
 
 # --- Object build rule ---
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
