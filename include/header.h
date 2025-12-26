@@ -17,6 +17,7 @@ typedef struct {
     unsigned char salt[MAX_SALT_LEN];
     uint32_t iterations;
     uint8_t aead_id;
+    uint8_t comp_id; /* 0 = none, 1 = gzip (zlib/gzip) */
     uint8_t iv_len;
     uint16_t name_len;
     uint64_t timestamp;

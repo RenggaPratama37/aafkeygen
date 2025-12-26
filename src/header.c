@@ -65,6 +65,7 @@ int parse_header(const char *input_file, aaf_header_t *out) {
             (itb[0] << 24) | (itb[1] << 16) | (itb[2] << 8) | itb[3];
 
         if (fread(&out->aead_id, 1, 1, in) != 1) { fclose(in); return 1; }
+        if (fread(&out->comp_id, 1, 1, in) != 1) { fclose(in); return 1; }
         if (fread(&out->iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
     } else {
         out->aead_id = 0;
@@ -116,6 +117,7 @@ int write_header(FILE *out, const aaf_header_t *hdr) {
         if (fwrite(itb, 1, 4, out) != 4) return 1;
 
         if (fwrite(&hdr->aead_id, 1, 1, out) != 1) return 1;
+        if (fwrite(&hdr->comp_id, 1, 1, out) != 1) return 1;
         if (fwrite(&hdr->iv_len, 1, 1, out) != 1) return 1;
     }
 

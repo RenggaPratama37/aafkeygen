@@ -32,7 +32,7 @@ CC ?= gcc
 
 # Add include directory + auto header dependency
 CFLAGS      := -Wall -O2 -I$(INC_DIR) -MMD -MP
-LIBS        := -lcrypto
+LIBS        := -lcrypto -lz
 
 # --- Source files ---
 SRCS := $(wildcard $(SRC_DIR)/*.c)

@@ -14,6 +14,7 @@ typedef struct {
     uint32_t iterations_flag;
     int aead_flag;
     const char *aead_name;
+    int compress;
 
     /* utility flags */
     int show_help;

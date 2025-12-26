@@ -24,6 +24,7 @@ void print_help() {
     printf("  -r, --random-name          Generate random output filename\n");
     printf("      --keep                 Keep original file after operation\n");
     printf("      --temp-decrypt         Decrypt to a secure temp file, open with default viewer, re-encrypt after close (prompt-based)\n");
+    printf("      --compress             Compress file with gzip before encryption (saves space)\n");
     printf("  -h, --help                 Show this message\n");
 }
 

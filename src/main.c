@@ -8,6 +8,7 @@
 #include "password_input.h"
 #include "utils.h"
 #include "flags.h"
+#include "compress.h"
 
 /* Whether the user explicitly requested an AEAD algorithm via CLI (--aead) */
 int aead_specified = 0;
@@ -159,7 +160,31 @@ int main(int argc, char *argv[]) {
 
         printf("[+] Encrypting '%s' → '%s'\n", args.input_file, args.output_file);
         pbkdf2_iterations = args.iterations_flag;
-        if (encrypt_file(args.input_file, args.output_file, password) == 0) {
+        int enc_ret = 1;
+        if (args.compress) {
+            /* compress input to temp file then encrypt with header indicating compression */
+            const char *base_tmp = getenv("TMPDIR");
+            if (!base_tmp) base_tmp = "/tmp";
+            char tmp_template[1024];
+            snprintf(tmp_template, sizeof(tmp_template), "%s/aaf_comp_XXXXXX", base_tmp);
+            int fd = mkstemp(tmp_template);
+            if (fd == -1) {
+                fprintf(stderr, "[x] Failed to create temp file for compression\n");
+                return 1;
+            }
+            close(fd);
+            if (compress_file_to(args.input_file, tmp_template) != 0) {
+                unlink(tmp_template);
+                fprintf(stderr, "[x] Compression failed\n");
+                return 1;
+            }
+            /* encrypt temp and set header original name to the real original filename */
+            enc_ret = encrypt_file_with_opts(tmp_template, args.output_file, password, args.input_file, 1);
+            unlink(tmp_template);
+        } else {
+            enc_ret = encrypt_file(args.input_file, args.output_file, password);
+        }
+        if (enc_ret == 0) {
             printf("✅ Encryption complete: %s\n", args.output_file);
             if (!args.keep) {
                 remove(args.input_file);

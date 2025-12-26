@@ -13,6 +13,7 @@
 /* AEAD / Cipher helpers */
 #include "aead.h"
 #include "cipher.h"
+#include "compress.h"
 
 /* Silence direct printing from this module so crypto becomes a pure engine.
  * The main program (or other frontends) should handle user-facing output.
@@ -115,6 +116,7 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
 
     aaf_header_t hdr;
     memset(&hdr, 0, sizeof(hdr));
+    hdr.comp_id = 0; /* no compression by default */
     hdr.fmt_ver = NEW_FORMAT_VERSION;
     hdr.kdf_id = KDF_PBKDF2_HMAC_SHA256;
     hdr.salt_len = DEFAULT_SALT_LEN;
@@ -225,9 +227,11 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
         }
     }
 
-    /* read AEAD id and iv length (v2+) */
+    /* read AEAD id, compression id and iv length (v2+) */
+    uint8_t comp_id = 0;
     if (fmt_ver >= 2) {
         if (fread(&aead_id, 1, 1, in) != 1) { fclose(in); return 1; }
+        if (fread(&comp_id, 1, 1, in) != 1) { fclose(in); return 1; }
         if (fread(&iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
     }
 
@@ -275,10 +279,23 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
         if (original_name[0]) final_output = original_name;
         else final_output = input_file; /* fallback to input filename (without .aaf handled by caller) */
     }
-    FILE *out = fopen(final_output, "wb");
-    if (!out) {
-        fclose(in);
-        return 1;
+
+    /* If compressed, decrypt into a temp file then decompress into final_output. */
+    FILE *out = NULL;
+    char tmp_decrypt_path[1024];
+    int use_temp_for_decrypt = 0;
+    if (comp_id != 0) {
+        const char *base_tmp = getenv("TMPDIR");
+        if (!base_tmp) base_tmp = "/tmp";
+        snprintf(tmp_decrypt_path, sizeof(tmp_decrypt_path), "%s/aaf_decrypt_XXXXXX", base_tmp);
+        int fd = mkstemp(tmp_decrypt_path);
+        if (fd == -1) { fclose(in); return 1; }
+        out = fdopen(fd, "wb");
+        if (!out) { close(fd); unlink(tmp_decrypt_path); fclose(in); return 1; }
+        use_temp_for_decrypt = 1;
+    } else {
+        out = fopen(final_output, "wb");
+        if (!out) { fclose(in); return 1; }
     }
 
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
@@ -338,7 +355,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             EVP_CIPHER_CTX_free(ctx);
             fclose(in);
             fclose(out);
-            unlink(final_output);
+            if (use_temp_for_decrypt) unlink(tmp_decrypt_path);
             OPENSSL_cleanse(key, sizeof(key));
             OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
@@ -356,7 +373,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
             EVP_CIPHER_CTX_free(ctx);
             fclose(in);
             fclose(out);
-            unlink(output_placeholder);
+            if (use_temp_for_decrypt) unlink(tmp_decrypt_path);
             OPENSSL_cleanse(key, sizeof(key));
             OPENSSL_cleanse(iv, sizeof(iv));
             return 1;
@@ -366,8 +383,18 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
     fclose(out);
     OPENSSL_cleanse(key, sizeof(key));
 
-        printf("✅ Decrypted successfully: %s\n",
-            output_placeholder ? output_placeholder : "(unknown)");
+    /* If we decrypted into a temp file because payload was compressed, decompress it */
+    if (use_temp_for_decrypt) {
+        if (decompress_file_to(tmp_decrypt_path, final_output) != 0) {
+            unlink(tmp_decrypt_path);
+            fprintf(stderr, "Decompression failed\n");
+            return 1;
+        }
+        unlink(tmp_decrypt_path);
+    }
+
+    printf("✅ Decrypted successfully: %s\n",
+        final_output ? final_output : "(unknown)");
     return 0;
 }
 
@@ -454,6 +481,81 @@ enc_fail2:
     if (in) fclose(in);
     if (out) { fclose(out); unlink(output_file); }
     OPENSSL_cleanse(key, sizeof(key));
+    return 1;
+}
+
+/* New helper that allows setting a compression id in the header. */
+int encrypt_file_with_opts(const char *input_file, const char *output_file, const char *password, const char *header_name, int comp_id) {
+    FILE *in = fopen(input_file, "rb");
+    FILE *out = fopen(output_file, "wb");
+    if (!in || !out) {
+        if (in) fclose(in);
+        if (out) fclose(out);
+        return 1;
+    }
+
+    unsigned char key[AES_KEY_SIZE], iv[AES_BLOCK_SIZE];
+
+    unsigned char salt[DEFAULT_SALT_LEN];
+    if (RAND_bytes(salt, DEFAULT_SALT_LEN) != 1) { fprintf(stderr, "Randomness generation for salt failed.\n"); goto write_error3; }
+
+    uint32_t iterations = DEFAULT_PBKDF2_ITERS;
+    extern uint32_t pbkdf2_iterations;
+    if (pbkdf2_iterations > 0) iterations = pbkdf2_iterations;
+
+    if (!derive_key_pbkdf2(password, salt, DEFAULT_SALT_LEN, iterations, key, AES_KEY_SIZE)) {
+        fprintf(stderr, "PBKDF2 derivation failed.\n");
+        goto write_error3;
+    }
+
+    extern int selected_aead;
+    int aead = selected_aead;
+    uint8_t iv_len = AES_BLOCK_SIZE;
+    if (aead == AEAD_AES_256_GCM) iv_len = GCM_IV_LEN;
+    if (RAND_bytes(iv, iv_len) != 1) goto write_error3;
+
+    aaf_header_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.fmt_ver = NEW_FORMAT_VERSION;
+    hdr.kdf_id = KDF_PBKDF2_HMAC_SHA256;
+    hdr.salt_len = DEFAULT_SALT_LEN;
+    memcpy(hdr.salt, salt, DEFAULT_SALT_LEN);
+    hdr.iterations = iterations;
+    hdr.aead_id = (uint8_t)aead;
+    hdr.comp_id = (uint8_t)comp_id;
+    hdr.iv_len = iv_len;
+    hdr.timestamp = (uint64_t)time(NULL);
+    size_t fnlen = header_name ? strlen(header_name) : 0;
+    if (fnlen > 65535) fnlen = 65535;
+    hdr.name_len = (uint16_t)fnlen;
+    if (hdr.name_len > 0 && header_name) strncpy(hdr.original_name, header_name, hdr.name_len);
+    memcpy(hdr.iv, iv, hdr.iv_len);
+    if (write_header(out, &hdr) != 0) goto write_error3;
+
+    if (aead == AEAD_AES_256_GCM) {
+        if (aead_encrypt_gcm_stream(key, iv, iv_len, in, out) != 0) goto enc_fail3;
+    } else {
+        if (cipher_encrypt_cbc_stream(key, iv, in, out) != 0) goto enc_fail3;
+    }
+    fclose(in);
+    fclose(out);
+    OPENSSL_cleanse(key, sizeof(key));
+    OPENSSL_cleanse(iv, sizeof(iv));
+    return 0;
+
+write_error3:
+    perror("File write error");
+    if (in) fclose(in);
+    if (out) { fclose(out); unlink(output_file); }
+    OPENSSL_cleanse(key, sizeof(key));
+    OPENSSL_cleanse(iv, sizeof(iv));
+    return 1;
+
+enc_fail3:
+    if (in) fclose(in);
+    if (out) { fclose(out); unlink(output_file); }
+    OPENSSL_cleanse(key, sizeof(key));
+    OPENSSL_cleanse(iv, sizeof(iv));
     return 1;
 }
 
