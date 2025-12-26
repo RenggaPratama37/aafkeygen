@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/wait.h>
+#include <errno.h>
 
 /* This file contains the prompt-based temp-decrypt helper previously embedded
  * in crypto.c. It uses decrypt_file() and encrypt_file_with_name() from
@@ -113,12 +115,50 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     printf("[+] Opened temporary file: %s\n", temp_path);
     pid_t pid = fork();
     if (pid == 0) {
+        /* Child: try several openers depending on environment. Prefer Termux on Android */
+        int is_termux = 0;
         const char *prefix = getenv("PREFIX");
-        if (prefix && strstr(prefix, "com.termux")){
-            execlp("termux-open", "termux-open", temp_path, (char *)NULL);
+        if (prefix && strstr(prefix, "com.termux")) is_termux = 1;
+        if (!is_termux) {
+            if (access("/data/data/com.termux", F_OK) == 0) is_termux = 1;
         }
-        execlp("xdg-open", "xdg-open", temp_path, (char *)NULL);
-        fprintf(stderr, "No suitable opener found\n");
+
+        char uri[1200];
+        snprintf(uri, sizeof(uri), "file://%s", temp_path);
+
+        /* helper to test command presence: use `system("command -v ...")` below */
+        if (is_termux) {
+            execlp("termux-open", "termux-open", temp_path, (char *)NULL);
+            /* fallthrough if termux-open is missing */
+        }
+
+        /* Prefer xdg-open on desktop/proot distros */
+        if (system("command -v xdg-open >/dev/null 2>&1") == 0) {
+            execlp("xdg-open", "xdg-open", temp_path, (char *)NULL);
+        }
+
+        /* Try GIO */
+        if (system("command -v gio >/dev/null 2>&1") == 0) {
+            execlp("gio", "gio", "open", temp_path, (char *)NULL);
+        }
+
+        /* On Android (proot or Termux), try am start */
+        {
+            FILE *fv = fopen("/proc/version", "r");
+            int is_android = 0;
+            if (fv) {
+                char buf[512];
+                if (fgets(buf, sizeof(buf), fv)) {
+                    if (strstr(buf, "Android") != NULL) is_android = 1;
+                }
+                fclose(fv);
+            }
+            if (is_android && system("command -v am >/dev/null 2>&1") == 0) {
+                execlp("am", "am", "start", "-a", "android.intent.action.VIEW", "-d", uri, (char *)NULL);
+            }
+        }
+
+        fprintf(stderr, "No suitable opener found (tried termux-open, xdg-open, gio, am).\n");
         _exit(1);
     } else if (pid < 0) {
         perror("fork");
