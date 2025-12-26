@@ -64,9 +64,22 @@ int parse_header(const char *input_file, aaf_header_t *out) {
         out->iterations =
             (itb[0] << 24) | (itb[1] << 16) | (itb[2] << 8) | itb[3];
 
+        /* Backwards-compat: older v2 headers did not include comp_id. The
+         * byte after aead_id may be either comp_id (0/1) or iv_len (12/16).
+         * Peek and disambiguate based on plausible iv lengths.
+         */
         if (fread(&out->aead_id, 1, 1, in) != 1) { fclose(in); return 1; }
-        if (fread(&out->comp_id, 1, 1, in) != 1) { fclose(in); return 1; }
-        if (fread(&out->iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
+        unsigned char nextb = 0;
+        if (fread(&nextb, 1, 1, in) != 1) { fclose(in); return 1; }
+        if (nextb <= 1) {
+            /* it's a comp_id */
+            out->comp_id = nextb;
+            if (fread(&out->iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
+        } else {
+            /* no comp_id present; treat nextb as iv_len and set comp_id=0 */
+            out->comp_id = 0;
+            out->iv_len = nextb;
+        }
     } else {
         out->aead_id = 0;
         out->iv_len = AES_BLOCK_SIZE;

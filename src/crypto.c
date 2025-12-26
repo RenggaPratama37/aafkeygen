@@ -227,12 +227,20 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
         }
     }
 
-    /* read AEAD id, compression id and iv length (v2+) */
+    /* read AEAD id and detect optional comp_id for backwards-compat */
     uint8_t comp_id = 0;
     if (fmt_ver >= 2) {
         if (fread(&aead_id, 1, 1, in) != 1) { fclose(in); return 1; }
-        if (fread(&comp_id, 1, 1, in) != 1) { fclose(in); return 1; }
-        if (fread(&iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
+        unsigned char nextb = 0;
+        if (fread(&nextb, 1, 1, in) != 1) { fclose(in); return 1; }
+        if (nextb <= 1) {
+            comp_id = nextb;
+            if (fread(&iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
+        } else {
+            /* old files: nextb was actually iv_len */
+            comp_id = 0;
+            iv_len = nextb;
+        }
     }
 
     /* If the user explicitly requested an AEAD via CLI, enforce it matches the header.
