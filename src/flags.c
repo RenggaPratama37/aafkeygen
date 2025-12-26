@@ -37,6 +37,8 @@ int parse_flags(int argc, char *argv[], Arguments *args){
         } else if (!strcmp(arg, "--iterations")) {
             if (i + 1 >= argc) return 1;
             args->iterations_flag = (uint32_t)atoi(argv[++i]);
+        } else if (!strcmp(arg, "--compress")) {
+            args->compress = 1;
         } else if (!strcmp(arg, "--legacy")) {
             fprintf(stderr, "--legacy option removed: legacy formats are no longer supported\n");
             return 1;

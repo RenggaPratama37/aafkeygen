@@ -23,6 +23,7 @@ int encrypt_file(const char *input_file, const char *output_file, const char *pa
 int decrypt_file(const char *input_file, const char *output_file, const char *password);
 int inspect_file(const char *input_file);
 int encrypt_file_with_name(const char *input_file, const char *output_file, const char *password, const char *header_name);
+int encrypt_file_with_opts(const char *input_file, const char *output_file, const char *password, const char *header_name, int comp_id);
 /* Globals controlled by main.c to influence KDF behavior */
 extern uint32_t pbkdf2_iterations;
 extern int selected_aead;

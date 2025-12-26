@@ -38,6 +38,8 @@ int inspect_file(const char *input_file) {
                                : "unknown"));
 
             printf("IV length: %u\n", hdr.iv_len);
+                 printf("Compression: %s\n",
+                     hdr.comp_id == 1 ? "gzip" : (hdr.comp_id == 0 ? "none" : "unknown"));
         }
 
         printf("Timestamp (epoch): %llu\n",
