@@ -18,6 +18,10 @@ public:
 signals:
     void lockRequested();
 
+private slots:
+    void onAddFileClicked();
+    void onAddFolderClicked();
+
 private:
     Ui::vault_view *ui;
 };

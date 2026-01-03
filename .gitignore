@@ -1,15 +1,68 @@
-# local test artifacts
-testfile*
-# Binaries and build files
-aafkeygen
+############################
+# Build & binaries
+############################
 build/
+build-*/
+*/build/
+aafkeygen
+aafkeygen_*/
 *.o
 *.a
+*.so
+*.so.*
+*.exe
+*.dll
+*.app
 *.deb
-aafkeygen_*/
 
-# OS / editor
-.DS_Store
-Thumbs.db
+############################
+# Qt / CMake generated
+############################
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.moc
+*.qm
+*.prl
+*.autosave
+
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CMakeLists.txt.user*
+
+############################
+# QtCreator
+############################
+*.pro.user*
+*.qbs.user*
+*.qmlc
+
+############################
+# Editor / OS junk
+############################
 *~
 *.swp
+.*.swp
+*.orig
+*.rej
+.DS_Store
+Thumbs.db
+.directory
+tags
+core
+
+############################
+# Temporary / test artifacts
+############################
+testfile*
+*.core
+*.debug
+
+############################
+# Python (just in case)
+############################
+*.pyc
+__pycache__/
+
