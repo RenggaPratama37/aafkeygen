@@ -1,0 +1,40 @@
+name: Build and verify .deb
+
+on:
+  push:
+    branches: [ experimental ]
+  pull_request:
+    branches: [ main, experimental ]
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev dpkg-dev ca-certificates
+
+      - name: Build .deb
+        run: |
+          make clean || true
+          make deb
+
+      - name: Verify packaged Version matches top-level VERSION
+        run: |
+          set -euo pipefail
+          VER_EXPECTED=$(cat VERSION)
+          DEB_FILE=$(ls *.deb | head -n1)
+          echo "Found deb: $DEB_FILE"
+          VER_DEB=$(dpkg-deb -f "$DEB_FILE" Version)
+          echo "VERSION file: $VER_EXPECTED"
+          echo "Deb Version: $VER_DEB"
+          if [ "$VER_EXPECTED" != "$VER_DEB" ]; then
+            echo "Version mismatch: expected $VER_EXPECTED but deb has $VER_DEB"
+            exit 1
+          fi
+          echo "Version verified: $VER_DEB"

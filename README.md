@@ -92,3 +92,37 @@ If `diff` reports no differences the roundtrip is successful.
 License
 
 See the `LICENSE` file in this repository.
+
+Using the engine from a GUI (CMake)
+
+This repository now builds a reusable static engine `libaafcrypto.a` (contains the core crypto/header/KDF/AEAD implementation). You can keep a single repo for CLI + GUI by linking the GUI against the built static library and the `include/` headers.
+
+Minimal CMake snippet (GUI project) — adjust paths to where the library and headers are built/installed:
+
+```cmake
+# locate static library (built with `make`) and headers
+find_library(AAF_LIB NAMES aafcrypto PATHS ../aafkeygen)
+if(NOT AAF_LIB)
+	message(FATAL_ERROR "Could not find libaafcrypto.a - build the engine first")
+endif()
+
+include_directories(${CMAKE_SOURCE_DIR}/../aafkeygen/include)
+
+add_executable(aafkeygen_gui main.cpp ...)
+target_link_libraries(aafkeygen_gui PRIVATE ${AAF_LIB} crypto z)
+```
+
+Alternatively, use an imported target so your CMakeLists can express include paths neatly:
+
+```cmake
+add_library(aafcrypto STATIC IMPORTED)
+set_target_properties(aafcrypto PROPERTIES
+	IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/../aafkeygen/libaafcrypto.a"
+	INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/../aafkeygen/include"
+)
+
+add_executable(aafkeygen_gui main.cpp ...)
+target_link_libraries(aafkeygen_gui PRIVATE aafcrypto OpenSSL::Crypto z)
+```
+
+If you prefer, I can add a small `CMakeLists.txt` under `engine/` that builds `libaafcrypto.a` via CMake so your GUI can `add_subdirectory()` directly; tell me if you want that.
