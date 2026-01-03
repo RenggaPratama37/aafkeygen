@@ -66,3 +66,4 @@ testfile*
 *.pyc
 __pycache__/
 
+.qtcreator/
