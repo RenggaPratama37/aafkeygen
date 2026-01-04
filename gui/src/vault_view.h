@@ -17,6 +17,7 @@ public:
 
 signals:
     void lockRequested();
+    void settingsRequested();
 
 private slots:
     void onAddFileClicked();

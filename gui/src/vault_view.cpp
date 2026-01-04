@@ -18,6 +18,8 @@ vault_view::vault_view(QWidget *parent)
 
     connect(ui->btn_add_folder, &QPushButton::clicked, this, &vault_view::onAddFolderClicked);
 
+    connect(ui->btn_settings, &QPushButton::clicked, this, &vault_view::settingsRequested);
+
 }
 
 vault_view::~vault_view()

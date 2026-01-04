@@ -1,6 +1,9 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "vault_view.h"
+#include "registerpage.h"
+#include "settingspage.h"
+#include "loginsetup.h"
 #include <QStackedWidget>
 #include <QPropertyAnimation>
 #include <QParallelAnimationGroup>
@@ -12,18 +15,32 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    // Replace central widget with a QStackedWidget so we can switch pages
+
     stackedWidget = new QStackedWidget(this);
-    // `ui->centralwidget` was created by setupUi; move it into the stack as page 0
+    registerPage = new RegisterPage(this);
+    stackedWidget->addWidget(registerPage);
     stackedWidget->addWidget(ui->centralwidget);
 
     // Create vault page and add as page 1
     vault = new vault_view(this);
     stackedWidget->addWidget(vault);
 
+    settings = new SettingsPage(this);
+    stackedWidget->addWidget(settings);
+
+    connect(registerPage, &RegisterPage::registerDone, this, [this]() {
+        slideTo(1);
+    });
+
     // When vault requests lock, slide back to page 0 (login)
     connect(vault, &vault_view::lockRequested, this, [this]() {
         slideTo(0);
+    });
+
+    connect(vault, &vault_view::settingsRequested, this, [this]() {
+        int idx = stackedWidget->indexOf(settings);
+        if (idx != -1)
+        slideTo(idx);
     });
 
     // Set stacked widget as the new central widget
@@ -33,7 +50,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->pwform->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
     });
 
-    // Enter = tekan unlock
+    // Press enter to unlock
     connect(ui->pwform, &QLineEdit::returnPressed, ui->unlock, &QPushButton::click);
 }
 
@@ -46,14 +63,17 @@ void MainWindow::on_unlock_clicked()
 {
     QString pw = ui->pwform->text();
 
-    if (pw == "sudo") {
-        // Switch to the vault page with a slide animation
-        int idx = stackedWidget->indexOf(vault);
-        if (idx != -1) slideTo(idx);
+    if (LoginSetup::verifyPassword(pw)) {
+        slideTo(2); // Vault
+        ui->pwform->clear();
     } else {
-        QMessageBox::warning(this, "Access Denied", "Password salah bro 😐");
+        QMessageBox::warning(this,
+            "Access Denied",
+            "Password salah bro 😐"
+        );
     }
 }
+
 
 void MainWindow::slideTo(int index)
 {

@@ -5,6 +5,8 @@
 
 class QStackedWidget;
 class vault_view;
+class SettingsPage;
+class RegisterPage; 
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -19,7 +21,7 @@ public:
     ~MainWindow();
 
 private slots:
-    void on_unlock_clicked();  // <-- Tambahkan ini bro
+    void on_unlock_clicked();
 
     void slideTo(int index);
 
@@ -27,6 +29,8 @@ private:
     Ui::MainWindow *ui;
     QStackedWidget *stackedWidget = nullptr;
     vault_view *vault = nullptr;
+    SettingsPage *settings;
+    RegisterPage *registerPage = nullptr;
 };
 
 #endif // MAINWINDOW_H

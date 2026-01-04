@@ -23,13 +23,21 @@ set(GUI_SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
+    src/settingspage.h
+    src/settingpage.cpp
+    src/registerpage.cpp
+    src/registerpage.h
     src/vault_view.cpp
     src/vault_view.h
     src/passworddialog.cpp
     src/passworddialog.h
+    src/loginsetup.cpp
+    src/loginsetup.h
     ui/mainwindow.ui
     ui/vault_view.ui
     ui/passworddialog.ui
+    ui/settingspage.ui
+    ui/registerpage.ui
 )
 
 # Executable

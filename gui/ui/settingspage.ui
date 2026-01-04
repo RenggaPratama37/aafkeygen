@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SettingsPage</class>
+ <widget class="QWidget" name="SettingsPage">
+  <property name="windowTitle">
+   <string>Settings</string>
+  </property>
+
+  <layout class="QVBoxLayout" name="verticalLayout">
+
+   <!-- Title -->
+   <item>
+    <widget class="QLabel" name="labelTitle">
+     <property name="text">
+      <string>Settings</string>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>14</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignLeft</set>
+     </property>
+    </widget>
+   </item>
+
+   <!-- Change Password -->
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel">
+       <property name="text">
+        <string>Change Password</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnChangePassword">
+       <property name="text">
+        <string>Change</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <!-- Temp View Timer -->
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel">
+       <property name="text">
+        <string>Temp View Timer</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="spinTempTimer">
+       <property name="suffix">
+        <string> sec</string>
+       </property>
+       <property name="minimum">
+        <number>5</number>
+       </property>
+       <property name="maximum">
+        <number>600</number>
+       </property>
+       <property name="value">
+        <number>60</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <!-- Encryption Algorithm -->
+   <item>
+    <layout class="QHBoxLayout">
+     <item>
+      <widget class="QLabel">
+       <property name="text">
+        <string>Encryption Algorithm</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboEncryption">
+       <item>
+        <property name="text">
+         <string>AES-GCM</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>AES-CBC</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>ChaCha20-Poly1305</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <!-- Auto Wipe -->
+   <item>
+    <widget class="QCheckBox" name="checkAutoWipe">
+     <property name="text">
+      <string>Auto-Wipe Plaintext</string>
+     </property>
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+
+   <!-- Password per File -->
+   <item>
+    <widget class="QCheckBox" name="checkPasswordPerFile">
+     <property name="text">
+      <string>Request Password per File</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+
+   <!-- Spacer -->
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
