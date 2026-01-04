@@ -67,3 +67,8 @@ testfile*
 __pycache__/
 
 .qtcreator/
+
+# Qt Creator
+*.user
+*.user.*
+build/
