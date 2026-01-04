@@ -5,6 +5,7 @@ project(gui LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Auto tools
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
@@ -13,41 +14,53 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS
     ${CMAKE_CURRENT_SOURCE_DIR}/ui
 )
 
+# Qt
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
+# Sources
 set(GUI_SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
     src/vault_view.cpp
     src/vault_view.h
+    src/passworddialog.cpp
+    src/passworddialog.h
     ui/mainwindow.ui
     ui/vault_view.ui
-    ui/dialog.ui
+    ui/passworddialog.ui
 )
 
+# Executable
 if(QT_VERSION_MAJOR GREATER_EQUAL 6)
-    qt_add_executable(gui
+    qt_add_executable(aafkeygen_gui
         ${GUI_SOURCES}
     )
 else()
-    add_executable(gui
+    add_executable(aafkeygen_gui
         ${GUI_SOURCES}
-        src/passworddialog.h
-        src/passworddialog.cpp
     )
 endif()
 
-target_include_directories(gui PRIVATE
+# Include directories
+target_include_directories(aafkeygen_gui PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(gui PRIVATE
+# Link Qt Widgets
+target_link_libraries(aafkeygen_gui PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
 )
 
-set_target_properties(gui PROPERTIES
+# Link engine if available from top-level project
+if(TARGET engine)
+    target_link_libraries(aafkeygen_gui PRIVATE engine)
+endif()
+
+# Output & bundle settings
+set_target_properties(aafkeygen_gui PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
 )
