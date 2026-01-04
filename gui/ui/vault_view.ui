@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>vault_view</class>
+ <widget class="QWidget" name="vault_view">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Secure Vault</string>
+  </property>
+
+  <layout class="QHBoxLayout" name="rootLayout">
+   <item>
+    <widget class="QWidget" name="sidebar">
+     <layout class="QVBoxLayout" name="sidebarLayout">
+      <item><widget class="QPushButton" name="btn_home"><property name="text"><string>Home</string></property></widget></item>
+      <item><widget class="QPushButton" name="btn_images"><property name="text"><string>Images</string></property></widget></item>
+      <item><widget class="QPushButton" name="btn_documents"><property name="text"><string>Documents</string></property></widget></item>
+      <item><widget class="QPushButton" name="btn_videos"><property name="text"><string>Videos</string></property></widget></item>
+      <item><widget class="QPushButton" name="btn_others"><property name="text"><string>Others</string></property></widget></item>
+
+      <item>
+       <spacer name="sidebar_spacer">
+        <property name="orientation"><enum>Qt::Vertical</enum></property>
+       </spacer>
+      </item>
+
+      <item><widget class="QPushButton" name="btn_settings"><property name="text"><string>Settings</string></property></widget></item>
+      <item><widget class="QPushButton" name="btn_lock"><property name="text"><string>Lock Vault</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+
+   <item>
+    <widget class="QWidget" name="content">
+     <layout class="QVBoxLayout" name="contentLayout">
+
+      <item>
+       <layout class="QHBoxLayout" name="toolbarLayout">
+        <item><widget class="QPushButton" name="btn_add_file"><property name="text"><string>+ Add File</string></property></widget></item>
+        <item><widget class="QPushButton" name="btn_add_folder"><property name="text"><string>+ Add Folder</string></property></widget></item>
+        <item><widget class="QLineEdit" name="search_box"><property name="placeholderText"><string>Search...</string></property></widget></item>
+        <item><widget class="QComboBox" name="sort_dropdown">
+          <item><property name="text"><string>Name</string></property></item>
+          <item><property name="text"><string>Date</string></property></item>
+          <item><property name="text"><string>Type</string></property></item>
+        </widget></item>
+       </layout>
+      </item>
+
+      <item>
+       <widget class="QWidget" name="gridArea">
+        <layout class="QGridLayout" name="fileGrid"/>
+       </widget>
+      </item>
+
+      <item>
+       <layout class="QHBoxLayout" name="footerLayout">
+        <item><widget class="QLabel" name="footer_items"><property name="text"><string>17 items</string></property></widget></item>
+        <item><widget class="QLabel" name="footer_status"><property name="text"><string>Vault decrypted temporary</string></property></widget></item>
+        <item><widget class="QLabel" name="footer_secure"><property name="text"><string>Unlocked</string></property></widget></item>
+       </layout>
+      </item>
+
+     </layout>
+    </widget>
+   </item>
+
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

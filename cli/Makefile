@@ -8,12 +8,12 @@
 NAME        := aafkeygen
 VERSION     := $(shell cat VERSION)
 DEB_VERSION := $(shell echo $(VERSION) | sed 's/^/v/')
+LIBNAME     := libaafcrypto.a
 BINARY      := $(NAME)
 
-SRC_DIR     := src
-INC_DIR     := include
+SRC_DIR     := ../libs/engine/src
+INC_DIR     := ../libs/engine/include
 BUILD_DIR   := build
-CM_BUILD_DIR := build
 
 ARCH ?= $(shell uname -m)
 
@@ -35,16 +35,39 @@ CC ?= gcc
 CFLAGS      := -Wall -O2 -I$(INC_DIR) -MMD -MP
 LIBS        := -lcrypto -lz
 
-# --- Default rule: delegate build to CMake (build CLI only) ---
-all:
-	@echo "Configuring with CMake (CLI only)..."
-	cmake -S . -B $(CM_BUILD_DIR) -DBUILD_GUI=OFF
-	@echo "Building aafkeygen_cli..."
-	cmake --build $(CM_BUILD_DIR) --target aafkeygen_cli -j$(shell nproc)
-	# copy produced CLI executable to top-level BINARY name for compatibility
-	@if [ -f $(CM_BUILD_DIR)/cli/aafkeygen_cli ]; then cp $(CM_BUILD_DIR)/cli/aafkeygen_cli $(BINARY); \
-	 elif [ -f $(CM_BUILD_DIR)/aafkeygen_cli ]; then cp $(CM_BUILD_DIR)/aafkeygen_cli $(BINARY); \
-	 else echo "ERROR: built CLI not found in $(CM_BUILD_DIR)"; exit 1; fi
+# --- Source files ---
+SRCS := $(wildcard $(SRC_DIR)/*.c) $(wildcard ../cli/src/*.c)
+OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(wildcard $(SRC_DIR)/*.c)) $(patsubst ../cli/src/%.c,$(BUILD_DIR)/%.o,$(wildcard ../cli/src/*.c))
+
+# Engine object selection (static library)
+ENGINE_OBJS := $(BUILD_DIR)/crypto.o $(BUILD_DIR)/aead.o $(BUILD_DIR)/cipher.o $(BUILD_DIR)/kdf.o $(BUILD_DIR)/header.o $(BUILD_DIR)/compress.o $(BUILD_DIR)/engine.o
+REMAIN_OBJS := $(filter-out $(ENGINE_OBJS), $(OBJS))
+DEPS := $(OBJS:.o=.d)
+
+# --- Default rule ---
+all: $(BINARY)
+
+# --- Build binary ---
+$(LIBNAME): $(ENGINE_OBJS)
+	@echo "Archiving engine -> $(LIBNAME)..."
+	ar rcs $@ $^
+
+$(BINARY): $(LIBNAME) $(REMAIN_OBJS)
+	@echo "Linking $(BINARY)..."
+	$(CC) $(CFLAGS) -o $@ $(REMAIN_OBJS) $(LIBNAME) $(LIBS)
+
+# --- Object build rules for engine and cli sources ---
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling engine $< ..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%.o: ../cli/src/%.c
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling cli $< ..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+-include $(DEPS)
 
 # --- Install binary ---
 install: $(BINARY)
