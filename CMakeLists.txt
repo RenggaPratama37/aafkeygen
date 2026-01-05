@@ -20,3 +20,19 @@ endif()
 if(BUILD_GUI)
 	add_subdirectory(gui)
 endif()
+
+# Packaging via CPack
+include(GNUInstallDirs)
+
+set(CPACK_PACKAGE_NAME "aafkeygen")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_CONTACT "you@example.com")
+set(CPACK_PACKAGE_DESCRIPTION "AAF keygen - secure file encryption tools (CLI + GUI)")
+
+# Default generator: DEB (can be changed by user)
+set(CPACK_GENERATOR "DEB")
+
+# Debian package dependencies (best-effort; users may need to adjust)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "zlib1g, libssl3")
+
+include(CPack)

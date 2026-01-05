@@ -72,3 +72,9 @@ set_target_properties(aafkeygen_gui PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
 )
+
+include(GNUInstallDirs)
+
+install(TARGETS aafkeygen_gui
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
