@@ -72,9 +72,6 @@
 
       <item>
        <layout class="QHBoxLayout" name="footerLayout">
-        <item><widget class="QLabel" name="footer_items"><property name="text"><string>17 items</string></property></widget></item>
-        <item><widget class="QLabel" name="footer_status"><property name="text"><string>Vault decrypted temporary</string></property></widget></item>
-        <item><widget class="QLabel" name="footer_secure"><property name="text"><string>Unlocked</string></property></widget></item>
        </layout>
       </item>
 
