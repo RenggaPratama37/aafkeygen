@@ -43,6 +43,12 @@ MainWindow::MainWindow(QWidget *parent)
         slideTo(idx);
     });
 
+    connect(settings, &SettingsPage::backRequested, this, [this]() {
+        int idx = stackedWidget->indexOf(vault);
+        if (idx != -1)
+        slideTo(idx);
+    });
+
     // Set stacked widget as the new central widget
     this->setCentralWidget(stackedWidget);
     // Checkbox show/hide password

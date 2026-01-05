@@ -17,6 +17,7 @@ public:
 
 signals:
     void changePasswordRequested();
+    void backRequested();
 
 private:
     Ui::SettingsPage *ui;

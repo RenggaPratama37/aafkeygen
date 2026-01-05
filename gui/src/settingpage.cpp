@@ -9,6 +9,8 @@ SettingsPage::SettingsPage(QWidget *parent)
 
     connect(ui->btnChangePassword, &QPushButton::clicked,
             this, &SettingsPage::changePasswordRequested);
+    connect(ui->btnBack, &QPushButton::clicked, 
+            this, &SettingsPage::backRequested);
 }
 
 SettingsPage::~SettingsPage()

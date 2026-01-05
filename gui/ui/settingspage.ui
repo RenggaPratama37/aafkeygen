@@ -2,61 +2,64 @@
 <ui version="4.0">
  <class>SettingsPage</class>
  <widget class="QWidget" name="SettingsPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>400</width>
+    <height>300</height>
+   </rect>
+  </property>
   <property name="windowTitle">
    <string>Settings</string>
   </property>
-
   <layout class="QVBoxLayout" name="verticalLayout">
-
+   
    <!-- Title -->
    <item>
     <widget class="QLabel" name="labelTitle">
-     <property name="text">
-      <string>Settings</string>
-     </property>
      <property name="font">
       <font>
        <pointsize>14</pointsize>
        <bold>true</bold>
       </font>
      </property>
+     <property name="text">
+      <string>Settings</string>
+     </property>
      <property name="alignment">
-      <set>Qt::AlignLeft</set>
+      <set>Qt::AlignCenter</set>
      </property>
     </widget>
    </item>
 
-   <!-- Change Password -->
+   <!-- Form layout for settings -->
    <item>
-    <layout class="QHBoxLayout">
-     <item>
-      <widget class="QLabel">
+    <layout class="QFormLayout" name="formLayout">
+     
+     <item row="0" column="0">
+      <widget class="QLabel" name="labelChangePassword">
        <property name="text">
         <string>Change Password</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="0" column="1">
       <widget class="QPushButton" name="btnChangePassword">
        <property name="text">
         <string>Change</string>
        </property>
       </widget>
      </item>
-    </layout>
-   </item>
 
-   <!-- Temp View Timer -->
-   <item>
-    <layout class="QHBoxLayout">
-     <item>
-      <widget class="QLabel">
+     <item row="1" column="0">
+      <widget class="QLabel" name="labelTempTimer">
        <property name="text">
         <string>Temp View Timer</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="1" column="1">
       <widget class="QSpinBox" name="spinTempTimer">
        <property name="suffix">
         <string> sec</string>
@@ -72,20 +75,15 @@
        </property>
       </widget>
      </item>
-    </layout>
-   </item>
 
-   <!-- Encryption Algorithm -->
-   <item>
-    <layout class="QHBoxLayout">
-     <item>
-      <widget class="QLabel">
+     <item row="2" column="0">
+      <widget class="QLabel" name="labelEncryption">
        <property name="text">
         <string>Encryption Algorithm</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="2" column="1">
       <widget class="QComboBox" name="comboEncryption">
        <item>
         <property name="text">
@@ -104,10 +102,11 @@
        </item>
       </widget>
      </item>
+
     </layout>
    </item>
 
-   <!-- Auto Wipe -->
+   <!-- Checkboxes -->
    <item>
     <widget class="QCheckBox" name="checkAutoWipe">
      <property name="text">
@@ -118,8 +117,6 @@
      </property>
     </widget>
    </item>
-
-   <!-- Password per File -->
    <item>
     <widget class="QCheckBox" name="checkPasswordPerFile">
      <property name="text">
@@ -131,19 +128,42 @@
     </widget>
    </item>
 
-   <!-- Spacer -->
+   <!-- Expanding spacer -->
    <item>
-    <spacer name="verticalSpacer">
+    <spacer name="verticalSpacer" >
      <property name="orientation">
       <enum>Qt::Vertical</enum>
      </property>
-     <property name="sizeHint">
+     <property name="sizeHint" stdset="0">
       <size>
        <width>20</width>
        <height>40</height>
       </size>
      </property>
     </spacer>
+   </item>
+
+   <!-- Back button aligned left -->
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayoutBack">
+     <item>
+      <widget class="QPushButton" name="btnBack">
+       <property name="text">
+        <string>Back</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacerBack">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeType">
+        <enum>QSizePolicy::Expanding</enum>
+       </property>
+      </spacer>
+     </item>
+    </layout>
    </item>
 
   </layout>
