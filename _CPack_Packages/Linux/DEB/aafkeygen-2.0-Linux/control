@@ -1,0 +1,10 @@
+Architecture: amd64
+Depends: zlib1g, libssl3
+Description: AAF keygen - secure file encryption tools (CLI + GUI)
+Maintainer: you@example.com
+Package: aafkeygen
+Priority: optional
+Section: devel
+Version: 2.0
+Installed-Size: 399
+

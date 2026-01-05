@@ -1,0 +1,15 @@
+ba61e898c703875bc8a820941735e59d  usr/bin/aafkeygen_cli
+442e74d8f13bf22fa877f8fec0429f42  usr/bin/aafkeygen_gui
+311902eebef7dea71ce5275208b10ccc  usr/include/aead.h
+1799b6017e8799c55301a268f50f00dd  usr/include/cipher.h
+7a64bf935b776faecfe9d2f85468c298  usr/include/compress.h
+4d3d4f9037b73c9bf7279f6e013707e9  usr/include/crypto.h
+3774e4ee0ae10b84f061b7e6ca0c6bf4  usr/include/filecheck.h
+44945a5f9980babc11b428605d3ea2bf  usr/include/flags.h
+789d9aa283bcdd06dabb30714ccdf2a3  usr/include/header.h
+c9eb87e5c8e86ed883a66889764ba32a  usr/include/inspect.h
+6199382cb70e574187690532bc53c112  usr/include/kdf.h
+108f86432b371b20cf042e444a4ce3fe  usr/include/password_input.h
+91663ca1af163064927612da091eb629  usr/include/temp.h
+de3bf0dc36abf6523f40c46517435d88  usr/include/utils.h
+f10ab125a3e26e7636e126323abc7530  usr/lib/libengine.a
