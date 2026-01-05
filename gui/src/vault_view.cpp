@@ -1,7 +1,10 @@
 #include "vault_view.h"
 #include "ui_vault_view.h"
+#include "vault_model.h"
+#include "vaultfilterproxy.h"
 #include "passworddialog.h"
 #include <QFileDialog>
+#include <QTableView>
 #include <QDir>
 #include <QDebug>
 #include <QPushButton>
@@ -11,7 +14,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHBoxLayout>
-#include <QTableWidget>
+#include <QModelIndex>
 #include <QHeaderView>
 #include <QDateTime>
 
@@ -39,19 +42,25 @@ vault_view::vault_view(QWidget *parent)
         m_grid = gridWidget->findChild<QGridLayout *>(QStringLiteral("fileGrid"));
     }
 
-    // Replace grid view with a table widget for file manager-like UI
+    // Replace grid view with a table view for file manager-like UI
     if (m_grid) {
         // remove existing placeholders in the grid and add a full-width table
-        // create table
-        m_table = new QTableWidget(this);
-        m_table->setColumnCount(3);
-        m_table->setHorizontalHeaderLabels({tr("File Name"), tr("Modified"), tr("Size")});
+        // create table view
+        m_table = new QTableView(this);
+        m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        m_table->setSelectionMode(QAbstractItemView::SingleSelection);
+        m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        m_table->setSortingEnabled(true);
+
+        m_model = new VaultModel(this);
+        m_filter = new VaultFilterProxy(this);
+        m_filter->setSourceModel(m_model);
+        m_table->setModel(m_filter);
+
         m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
         m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
         m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-        m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-        m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-        m_table->setSortingEnabled(true);
+
         // replace the fileGrid widget area with table
         QWidget *fileGridWidget = ui->fileScrollArea->widget();
         QLayoutItem *child;
@@ -61,7 +70,7 @@ vault_view::vault_view(QWidget *parent)
         }
         m_grid->addWidget(m_table, 0, 0, 1, 3);
 
-        connect(m_table, &QTableWidget::cellDoubleClicked, this, &vault_view::onTableDoubleClicked);
+        connect(m_table, &QTableView::doubleClicked, this, &vault_view::onTableDoubleClicked);
     }
 
     // Connect sidebar filter buttons
@@ -192,23 +201,9 @@ void vault_view::onAddFolderClicked()
 
 void vault_view::addFileEntry(const QString &path)
 {
-    if (!m_table) return;
-
-    QFileInfo fi(path);
-    int row = m_table->rowCount();
-    m_table->insertRow(row);
-
-    QTableWidgetItem *nameItem = new QTableWidgetItem(fi.fileName());
-    nameItem->setData(Qt::UserRole, path);
-    QDateTime mt = fi.lastModified();
-    QTableWidgetItem *modItem = new QTableWidgetItem(mt.toString(Qt::DefaultLocaleShortDate));
-    QTableWidgetItem *sizeItem = new QTableWidgetItem(QString::number(fi.size()));
-
-    m_table->setItem(row, 0, nameItem);
-    m_table->setItem(row, 1, modItem);
-    m_table->setItem(row, 2, sizeItem);
-
-    m_files.append(path);
+    Q_UNUSED(path)
+    // Model-driven view: reload the model so the view shows the latest vault state
+    if (m_model) m_model->loadVault();
 }
 
 QString vault_view::fileForButton(QObject *senderObj) const
@@ -282,18 +277,8 @@ void vault_view::onDecryptClicked()
 
 void vault_view::loadVaultEntries()
 {
-    if (!m_table) return;
-    m_table->clearContents();
-    m_table->setRowCount(0);
-    m_files.clear();
-
-    QString vaultDir = QDir::homePath() + "/.local/share/aafkeygen/vault/";
-    QDir dir(vaultDir);
-    if (!dir.exists()) return;
-    auto entries = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Time);
-    for (const QFileInfo &fi : entries) {
-        addFileEntry(fi.absoluteFilePath());
-    }
+    if (!m_model) return;
+    m_model->loadVault();
 }
 
 bool vault_view::matchesCategory(const QString &path, int cat) const
@@ -310,23 +295,16 @@ bool vault_view::matchesCategory(const QString &path, int cat) const
     return true; // fallback
 }
 
-void vault_view::onTableDoubleClicked(int row, int column)
+void vault_view::onTableDoubleClicked(const QModelIndex &idx)
 {
-    QTableWidgetItem *it = m_table->item(row, 0);
-    if (!it) return;
-    QString path = it->data(Qt::UserRole).toString();
+    if (!idx.isValid() || !m_filter) return;
+
+    QModelIndex src = m_filter->mapToSource(idx);
+    QVariant pathVar = src.data(Qt::UserRole);
+    if (!pathVar.isValid()) return;
+    QString path = pathVar.toString();
     if (path.isEmpty()) return;
 
-    // Simulate decrypt button press for this path
-    QPushButton *fake = new QPushButton();
-    fake->setProperty("path", path);
-    // call decrypt flow directly
-    QString storedPath = fileForButton(fake);
-    delete fake;
-    if (storedPath.isEmpty()) return;
-
-    // Reuse onDecryptClicked logic by simulating a button sender
-    // We'll call the decrypt code directly here for clarity
     PasswordDialog pwdDlg(PasswordDialog::Decrypt, this);
     if (pwdDlg.exec() != QDialog::Accepted) return;
     QString password = pwdDlg.password();
@@ -359,8 +337,23 @@ void vault_view::onTableDoubleClicked(int row, int column)
     loadVaultEntries();
 }
 
-void vault_view::onFilterImages() { if (!m_table) return; /* simple reload + filter */ loadVaultEntries(); for (int r=m_table->rowCount()-1;r>=0;--r) if (!matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),1)) m_table->removeRow(r); }
-void vault_view::onFilterDocuments() { if (!m_table) return; loadVaultEntries(); for (int r=m_table->rowCount()-1;r>=0;--r) if (!matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),2)) m_table->removeRow(r); }
-void vault_view::onFilterVideos() { if (!m_table) return; loadVaultEntries(); for (int r=m_table->rowCount()-1;r>=0;--r) if (!matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),3)) m_table->removeRow(r); }
-void vault_view::onFilterOthers() { if (!m_table) return; loadVaultEntries(); for (int r=m_table->rowCount()-1;r>=0;--r) if (matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),1) || matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),2) || matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),3)) m_table->removeRow(r); }
-void vault_view::onFilterAll() { loadVaultEntries(); }
+
+void vault_view::onFilterImages() { 
+    m_filter->setCategory(VaultFilterProxy::Images); 
+}
+
+void vault_view::onFilterDocuments() { 
+    m_filter->setCategory(VaultFilterProxy::Documents); 
+}
+
+void vault_view::onFilterVideos() { 
+    m_filter->setCategory(VaultFilterProxy::Videos); 
+}
+
+void vault_view::onFilterOthers() { 
+    m_filter->setCategory(VaultFilterProxy::Others); 
+}
+
+void vault_view::onFilterAll() { 
+    m_filter->setCategory(VaultFilterProxy::All); 
+}

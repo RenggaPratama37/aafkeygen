@@ -33,6 +33,10 @@ set(GUI_SOURCES
     src/passworddialog.h
     src/loginsetup.cpp
     src/loginsetup.h
+    src/vault_model.cpp
+    src/vault_model.h
+    src/vaultfilterproxy.cpp
+    src/vaultfilterproxy.h
     ui/mainwindow.ui
     ui/vault_view.ui
     ui/passworddialog.ui

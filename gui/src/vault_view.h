@@ -5,10 +5,15 @@
 
 #include <QString>
 #include <QVector>
+#include <QTableView>
+#include <QSortFilterProxyModel>
+#include <QModelIndex>
 
 class QLabel;
 class QPushButton;
 class QGridLayout;
+class VaultModel;
+class VaultFilterProxy;
 
 namespace Ui {
 class vault_view;
@@ -30,7 +35,7 @@ private slots:
     void onAddFileClicked();
     void onAddFolderClicked();
     void onDecryptClicked();
-    void onTableDoubleClicked(int row, int column);
+    void onTableDoubleClicked(const QModelIndex &idx);
     void onFilterImages();
     void onFilterDocuments();
     void onFilterVideos();
@@ -45,9 +50,10 @@ private:
 
 private:
     Ui::vault_view *ui;
-    QVector<QString> m_files;
     QGridLayout *m_grid = nullptr;
-    class QTableWidget *m_table = nullptr;
+    QTableView *m_table = nullptr;
+    VaultModel *m_model = nullptr;
+    VaultFilterProxy *m_filter = nullptr;
 };
 
 #endif // VAULT_VIEW_H
