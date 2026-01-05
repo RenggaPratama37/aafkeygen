@@ -18,6 +18,7 @@ aafkeygen_*/
 ############################
 # Qt / CMake generated
 ############################
+_CPack_Packages/
 moc_*.cpp
 ui_*.h
 qrc_*.cpp
@@ -59,6 +60,7 @@ core
 testfile*
 *.core
 *.debug
+*.db
 
 ############################
 # Python (just in case)
