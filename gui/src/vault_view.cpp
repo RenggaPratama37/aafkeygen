@@ -74,15 +74,22 @@ void vault_view::onAddFileClicked()
         return;
     }
 
-    // Prepare output paths: final will be original + .aaf
-    QString outPath = filePath + QStringLiteral(".aaf");
-    if (QFile::exists(outPath)) {
-        auto resp = QMessageBox::question(this, tr("Overwrite?"), tr("Encrypted file %1 already exists. Overwrite?").arg(outPath),
+    // Prepare vault directory and target paths
+    QString vaultDir = QDir::homePath() + "/.local/share/aafkeygen/vault/";
+    QDir().mkpath(vaultDir);
+    QFile::setPermissions(vaultDir, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+
+    QString baseName = QFileInfo(filePath).fileName();
+    QString targetName = baseName + QStringLiteral(".aaf");
+    QString targetPath = vaultDir + targetName;
+    if (QFile::exists(targetPath)) {
+        auto resp = QMessageBox::question(this, tr("Overwrite?"), tr("Encrypted file %1 already exists in the vault. Overwrite?").arg(targetName),
                                           QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (resp != QMessageBox::Yes) return;
     }
 
-    QString tmpOut = outPath + QStringLiteral(".tmp");
+    // Create temporary file in system temp directory to avoid partial writes into vault
+    QString tmpOut = QDir::temp().absoluteFilePath(targetName + QStringLiteral(".tmp"));
 
     int res = encrypt_file(filePath.toUtf8().constData(), tmpOut.toUtf8().constData(), password.toUtf8().constData());
     if (res != 0) {
@@ -90,17 +97,28 @@ void vault_view::onAddFileClicked()
         QFile::remove(tmpOut);
         return;
     }
-    // Move temporary encrypted file into final location (outPath)
-    if (!QFile::remove(outPath)) {
-        // ignore failure — remove returns false if file didn't exist or couldn't be removed
+
+    // Copy temporary encrypted file into vault (handles cross-filesystem)
+    if (!QFile::remove(targetPath)) {
+        // ignore
     }
-    if (!QFile::rename(tmpOut, outPath)) {
-        QMessageBox::warning(this, tr("Warning"), tr("Could not move encrypted file into place. Encrypted file at: %1").arg(tmpOut));
+    if (!QFile::copy(tmpOut, targetPath)) {
+        QMessageBox::warning(this, tr("Warning"), tr("Could not move encrypted file into vault. Temp file at: %1").arg(tmpOut));
+        QFile::remove(tmpOut);
         return;
     }
+    QFile::remove(tmpOut);
 
-    // Add to history view using the encrypted file path so users can decrypt with GUI or CLI
-    addFileEntry(outPath);
+    // Restrict permissions on vault file (owner read/write)
+    QFile::setPermissions(targetPath, QFile::ReadOwner | QFile::WriteOwner);
+
+    // Remove original file (user requested in-place semantics -> now moved to vault)
+    if (!QFile::remove(filePath)) {
+        QMessageBox::warning(this, tr("Warning"), tr("Could not remove original file after encryption: %1").arg(filePath));
+    }
+
+    // Add to history view using the vault path so users can decrypt with GUI or CLI
+    addFileEntry(targetPath);
 }
 
 
@@ -176,9 +194,17 @@ void vault_view::onDecryptClicked()
         return;
     }
 
+    // Prepare decrypted output directory (Documents/aafkeygen)
+    QString outDir = QDir::homePath() + "/Documents/aafkeygen/";
+    QDir().mkpath(outDir);
+    QFile::setPermissions(outDir, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+
     // Derive output path by stripping the .aaf extension
-    QString outPath = path.left(path.length() - 4);
-    QString tmpOut = outPath + QStringLiteral(".tmp");
+    QString fileName = QFileInfo(path).fileName();
+    QString origName = fileName;
+    if (origName.endsWith(QStringLiteral(".aaf"), Qt::CaseInsensitive)) origName.chop(4);
+    QString outPath = outDir + origName;
+    QString tmpOut = QDir::temp().absoluteFilePath(origName + QStringLiteral(".tmp"));
 
     int res = decrypt_file(path.toUtf8().constData(), tmpOut.toUtf8().constData(), password.toUtf8().constData());
     if (res != 0) {
@@ -187,7 +213,7 @@ void vault_view::onDecryptClicked()
         return;
     }
 
-    // Move decrypted output into place (outPath)
+    // Move decrypted output into place (outPath) using copy to handle FS boundaries
     if (QFile::exists(outPath)) {
         auto resp = QMessageBox::question(this, tr("Overwrite?"), tr("File %1 already exists. Overwrite? ").arg(outPath),
                                           QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -197,7 +223,18 @@ void vault_view::onDecryptClicked()
         }
         QFile::remove(outPath);
     }
-    if (!QFile::rename(tmpOut, outPath)) {
+    if (!QFile::copy(tmpOut, outPath)) {
         QMessageBox::warning(this, tr("Warning"), tr("Could not move decrypted file into place. Decrypted file at: %1").arg(tmpOut));
+        QFile::remove(tmpOut);
+        return;
+    }
+    QFile::remove(tmpOut);
+
+    // Restrict permissions on decrypted file
+    QFile::setPermissions(outPath, QFile::ReadOwner | QFile::WriteOwner);
+
+    // Remove encrypted file from vault after successful decryption
+    if (!QFile::remove(path)) {
+        QMessageBox::warning(this, tr("Warning"), tr("Could not remove encrypted file from vault: %1").arg(path));
     }
 }
