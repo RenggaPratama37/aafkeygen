@@ -3,6 +3,13 @@
 
 #include <QWidget>
 
+#include <QString>
+#include <QVector>
+
+class QLabel;
+class QPushButton;
+class QGridLayout;
+
 namespace Ui {
 class vault_view;
 }
@@ -22,9 +29,16 @@ signals:
 private slots:
     void onAddFileClicked();
     void onAddFolderClicked();
+    void onDecryptClicked();
+
+private:
+    void addFileEntry(const QString &path);
+    QString fileForButton(QObject *senderObj) const;
 
 private:
     Ui::vault_view *ui;
+    QVector<QString> m_files;
+    QGridLayout *m_grid = nullptr;
 };
 
 #endif // VAULT_VIEW_H
