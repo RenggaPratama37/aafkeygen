@@ -31,6 +31,7 @@ private:
     vault_view *vault = nullptr;
     SettingsPage *settings;
     RegisterPage *registerPage = nullptr;
+    QWidget *loginPage;
 };
 
 #endif // MAINWINDOW_H
