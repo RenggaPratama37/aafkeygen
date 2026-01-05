@@ -1,5 +1,5 @@
 ba61e898c703875bc8a820941735e59d  usr/bin/aafkeygen_cli
-442e74d8f13bf22fa877f8fec0429f42  usr/bin/aafkeygen_gui
+ad2d6811cacc106d22f21ed25fff05bf  usr/bin/aafkeygen_gui
 311902eebef7dea71ce5275208b10ccc  usr/include/aead.h
 1799b6017e8799c55301a268f50f00dd  usr/include/cipher.h
 7a64bf935b776faecfe9d2f85468c298  usr/include/compress.h
