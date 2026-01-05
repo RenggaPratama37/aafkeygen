@@ -11,6 +11,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QDateTime>
 
 extern "C" {
 #include <crypto.h>
@@ -35,6 +38,41 @@ vault_view::vault_view(QWidget *parent)
     if (gridWidget) {
         m_grid = gridWidget->findChild<QGridLayout *>(QStringLiteral("fileGrid"));
     }
+
+    // Replace grid view with a table widget for file manager-like UI
+    if (m_grid) {
+        // remove existing placeholders in the grid and add a full-width table
+        // create table
+        m_table = new QTableWidget(this);
+        m_table->setColumnCount(3);
+        m_table->setHorizontalHeaderLabels({tr("File Name"), tr("Modified"), tr("Size")});
+        m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+        m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+        m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+        m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        m_table->setSortingEnabled(true);
+        // replace the fileGrid widget area with table
+        QWidget *fileGridWidget = ui->fileScrollArea->widget();
+        QLayoutItem *child;
+        while ((child = m_grid->takeAt(0)) != nullptr) {
+            if (child->widget()) { child->widget()->deleteLater(); }
+            delete child;
+        }
+        m_grid->addWidget(m_table, 0, 0, 1, 3);
+
+        connect(m_table, &QTableWidget::cellDoubleClicked, this, &vault_view::onTableDoubleClicked);
+    }
+
+    // Connect sidebar filter buttons
+    connect(ui->btn_images, &QPushButton::clicked, this, &vault_view::onFilterImages);
+    connect(ui->btn_documents, &QPushButton::clicked, this, &vault_view::onFilterDocuments);
+    connect(ui->btn_videos, &QPushButton::clicked, this, &vault_view::onFilterVideos);
+    connect(ui->btn_others, &QPushButton::clicked, this, &vault_view::onFilterOthers);
+    connect(ui->btn_home, &QPushButton::clicked, this, &vault_view::onFilterAll);
+
+    // Load existing vault entries
+    loadVaultEntries();
 
 }
 
@@ -154,21 +192,22 @@ void vault_view::onAddFolderClicked()
 
 void vault_view::addFileEntry(const QString &path)
 {
-    if (!m_grid) return;
+    if (!m_table) return;
 
-    int row = m_files.size() / 3; // 3 columns
-    int col = m_files.size() % 3;
+    QFileInfo fi(path);
+    int row = m_table->rowCount();
+    m_table->insertRow(row);
 
-    QWidget *item = new QWidget(this);
-    QHBoxLayout *lay = new QHBoxLayout(item);
-    QLabel *lbl = new QLabel(QFileInfo(path).fileName(), item);
-    QPushButton *btn = new QPushButton(tr("Decrypt"), item);
-    btn->setProperty("path", path);
-    connect(btn, &QPushButton::clicked, this, &vault_view::onDecryptClicked);
-    lay->addWidget(lbl);
-    lay->addWidget(btn);
+    QTableWidgetItem *nameItem = new QTableWidgetItem(fi.fileName());
+    nameItem->setData(Qt::UserRole, path);
+    QDateTime mt = fi.lastModified();
+    QTableWidgetItem *modItem = new QTableWidgetItem(mt.toString(Qt::DefaultLocaleShortDate));
+    QTableWidgetItem *sizeItem = new QTableWidgetItem(QString::number(fi.size()));
 
-    m_grid->addWidget(item, row, col);
+    m_table->setItem(row, 0, nameItem);
+    m_table->setItem(row, 1, modItem);
+    m_table->setItem(row, 2, sizeItem);
+
     m_files.append(path);
 }
 
@@ -237,4 +276,91 @@ void vault_view::onDecryptClicked()
     if (!QFile::remove(path)) {
         QMessageBox::warning(this, tr("Warning"), tr("Could not remove encrypted file from vault: %1").arg(path));
     }
+    // Refresh table entries
+    loadVaultEntries();
 }
+
+void vault_view::loadVaultEntries()
+{
+    if (!m_table) return;
+    m_table->clearContents();
+    m_table->setRowCount(0);
+    m_files.clear();
+
+    QString vaultDir = QDir::homePath() + "/.local/share/aafkeygen/vault/";
+    QDir dir(vaultDir);
+    if (!dir.exists()) return;
+    auto entries = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Time);
+    for (const QFileInfo &fi : entries) {
+        addFileEntry(fi.absoluteFilePath());
+    }
+}
+
+bool vault_view::matchesCategory(const QString &path, int cat) const
+{
+    // cat: 0=all,1=images,2=docs,3=videos,4=others
+    if (cat == 0) return true;
+    QString ext = QFileInfo(path).suffix().toLower();
+    static const QStringList images = {"png","jpg","jpeg","gif","bmp","svg"};
+    static const QStringList docs = {"pdf","doc","docx","txt","md","odt"};
+    static const QStringList videos = {"mp4","mkv","avi","mov","webm"};
+    if (cat == 1) return images.contains(ext);
+    if (cat == 2) return docs.contains(ext);
+    if (cat == 3) return videos.contains(ext);
+    return true; // fallback
+}
+
+void vault_view::onTableDoubleClicked(int row, int column)
+{
+    QTableWidgetItem *it = m_table->item(row, 0);
+    if (!it) return;
+    QString path = it->data(Qt::UserRole).toString();
+    if (path.isEmpty()) return;
+
+    // Simulate decrypt button press for this path
+    QPushButton *fake = new QPushButton();
+    fake->setProperty("path", path);
+    // call decrypt flow directly
+    QString storedPath = fileForButton(fake);
+    delete fake;
+    if (storedPath.isEmpty()) return;
+
+    // Reuse onDecryptClicked logic by simulating a button sender
+    // We'll call the decrypt code directly here for clarity
+    PasswordDialog pwdDlg(PasswordDialog::Decrypt, this);
+    if (pwdDlg.exec() != QDialog::Accepted) return;
+    QString password = pwdDlg.password();
+
+    // derive output similar to onDecryptClicked
+    QString fileName = QFileInfo(path).fileName();
+    QString origName = fileName;
+    if (origName.endsWith(QStringLiteral(".aaf"), Qt::CaseInsensitive)) origName.chop(4);
+    QString outDir = QDir::homePath() + "/Documents/aafkeygen/";
+    QDir().mkpath(outDir);
+    QString outPath = outDir + origName;
+    QString tmpOut = QDir::temp().absoluteFilePath(origName + QStringLiteral(".tmp"));
+
+    int res = decrypt_file(path.toUtf8().constData(), tmpOut.toUtf8().constData(), password.toUtf8().constData());
+    if (res != 0) {
+        QMessageBox::critical(this, tr("Decryption failed"), tr("Failed to decrypt file: %1").arg(path));
+        QFile::remove(tmpOut);
+        return;
+    }
+    if (!QFile::copy(tmpOut, outPath)) {
+        QMessageBox::warning(this, tr("Warning"), tr("Could not move decrypted file into place. Decrypted file at: %1").arg(tmpOut));
+        QFile::remove(tmpOut);
+        return;
+    }
+    QFile::remove(tmpOut);
+    QFile::setPermissions(outPath, QFile::ReadOwner | QFile::WriteOwner);
+    if (!QFile::remove(path)) {
+        QMessageBox::warning(this, tr("Warning"), tr("Could not remove encrypted file from vault: %1").arg(path));
+    }
+    loadVaultEntries();
+}
+
+void vault_view::onFilterImages() { if (!m_table) return; /* simple reload + filter */ loadVaultEntries(); for (int r=m_table->rowCount()-1;r>=0;--r) if (!matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),1)) m_table->removeRow(r); }
+void vault_view::onFilterDocuments() { if (!m_table) return; loadVaultEntries(); for (int r=m_table->rowCount()-1;r>=0;--r) if (!matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),2)) m_table->removeRow(r); }
+void vault_view::onFilterVideos() { if (!m_table) return; loadVaultEntries(); for (int r=m_table->rowCount()-1;r>=0;--r) if (!matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),3)) m_table->removeRow(r); }
+void vault_view::onFilterOthers() { if (!m_table) return; loadVaultEntries(); for (int r=m_table->rowCount()-1;r>=0;--r) if (matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),1) || matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),2) || matchesCategory(m_table->item(r,0)->data(Qt::UserRole).toString(),3)) m_table->removeRow(r); }
+void vault_view::onFilterAll() { loadVaultEntries(); }

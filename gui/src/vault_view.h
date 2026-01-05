@@ -30,15 +30,24 @@ private slots:
     void onAddFileClicked();
     void onAddFolderClicked();
     void onDecryptClicked();
+    void onTableDoubleClicked(int row, int column);
+    void onFilterImages();
+    void onFilterDocuments();
+    void onFilterVideos();
+    void onFilterOthers();
+    void onFilterAll();
 
 private:
     void addFileEntry(const QString &path);
     QString fileForButton(QObject *senderObj) const;
+    void loadVaultEntries();
+    bool matchesCategory(const QString &path, int cat) const;
 
 private:
     Ui::vault_view *ui;
     QVector<QString> m_files;
     QGridLayout *m_grid = nullptr;
+    class QTableWidget *m_table = nullptr;
 };
 
 #endif // VAULT_VIEW_H
