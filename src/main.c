@@ -64,25 +64,25 @@ int main(int argc, char *argv[]) {
     /* check file existence and extension rules before prompting for password */
     FileInfo info = {0};
     if (file_check(args.input_file, &info) != 0) {
-        fprintf(stderr, "[X] Failed to stat or read: %s\n", args.input_file);
+        fprintf(stderr, "ERROR: Failed to stat or read: %s\n", args.input_file);
         return 1;
     }
     if (!info.exist) {
-        fprintf(stderr, "[X] File not found: %s\n", args.input_file);
+        fprintf(stderr, "ERROR: File not found: %s\n", args.input_file);
         return 1;
     }
     if (args.encrypt && info.is_aaf) {
-        fprintf(stderr, "[X] Refusing to encrypt: '%s' already appears to be an .aaf file\n", args.input_file);
+        fprintf(stderr, "ERROR: Refusing to encrypt: '%s' already appears to be an .aaf file\n", args.input_file);
         return 1;
     }
     if (args.decrypt && !info.is_aaf) {
-        fprintf(stderr, "[X] Refusing to decrypt: '%s' does not appear to be an .aaf file\n", args.input_file);
+        fprintf(stderr, "ERROR: Refusing to decrypt: '%s' does not appear to be an .aaf file\n", args.input_file);
         return 1;
     }
 
     /* Do not allow explicitly selecting AEAD when decrypting: algorithm is stored in the file header */
     if (args.decrypt && args.aead_flag) {
-        fprintf(stderr, "[X] --aead is only valid for encryption; when decrypting the algorithm is read from the file header\n");
+        fprintf(stderr, "ERROR: --aead is only valid for encryption; when decrypting the algorithm is read from the file header\n");
         return 1;
     }
 
@@ -97,13 +97,13 @@ int main(int argc, char *argv[]) {
                 free(password_confirm);
                 break;
             }
-            printf("[x] Passwords do not match. Try Again.\n");
+            printf("WARNING: Passwords do not match. Try again.\n");
             free(password_confirm);
         }
     } else if (args.decrypt) {
         password = read_password("Enter password for decryption: ");
         if (!password) {
-            fprintf(stderr, "[X] Password input failed.\n");
+            fprintf(stderr, "ERROR: Password input failed.\n");
             return 1;
         }
     }
@@ -136,7 +136,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        printf("[+] Encrypting '%s' → '%s'\n", args.input_file, args.output_file);
+        printf("INFO: Encrypting '%s' -> '%s'\n", args.input_file, args.output_file);
         pbkdf2_iterations = args.iterations_flag;
         int enc_ret = 1;
         if (args.compress) {
@@ -147,13 +147,13 @@ int main(int argc, char *argv[]) {
             snprintf(tmp_template, sizeof(tmp_template), "%s/aaf_comp_XXXXXX", base_tmp);
             int fd = mkstemp(tmp_template);
             if (fd == -1) {
-                fprintf(stderr, "[x] Failed to create temp file for compression\n");
+                fprintf(stderr, "ERROR: Failed to create temp file for compression\n");
                 return 1;
             }
             close(fd);
             if (compress_file_to(args.input_file, tmp_template) != 0) {
                 unlink(tmp_template);
-                fprintf(stderr, "[x] Compression failed\n");
+                fprintf(stderr, "ERROR: Compression failed\n");
                 return 1;
             }
             /* encrypt temp and set header original name to the real original filename */
@@ -163,13 +163,13 @@ int main(int argc, char *argv[]) {
             enc_ret = encrypt_file(args.input_file, args.output_file, password);
         }
         if (enc_ret == 0) {
-            printf("✅ Encryption complete: %s\n", args.output_file);
+            printf("SUCCESS: Encryption complete: %s\n", args.output_file);
             if (!args.keep) {
                 remove(args.input_file);
-                printf("[–] Original file deleted.\n");
+                printf("INFO: Original file deleted.\n");
             }
         } else {
-            fprintf(stderr, "[x] Encryption failed.\n");
+            fprintf(stderr, "ERROR: Encryption failed.\n");
         }
     }
 
@@ -179,7 +179,7 @@ int main(int argc, char *argv[]) {
         if (ilen > 4 && strcmp(args.input_file + ilen - 4, ".aaf") == 0){
             snprintf(default_output, sizeof(default_output), "%.*s", (int)(ilen - 4), args.input_file);
         } else {
-            fprintf(stderr, "%s is not .aaf file\n", args.input_file);
+            fprintf(stderr, "ERROR: %s is not an .aaf file\n", args.input_file);
             return 1;
         }
 
@@ -193,22 +193,20 @@ int main(int argc, char *argv[]) {
         }
 
         if (args.random_name == 2) {
-            printf("[+] Temp-decrypting and opening '%s'\n", args.input_file);
+            printf("INFO: Temp-decrypting and opening '%s'\n", args.input_file);
             if (temp_decrypt_and_open(args.input_file, password) != 0) {
-                fprintf(stderr, "[x] Temp-decrypt failed.\n");
+                fprintf(stderr, "ERROR: Temp-decrypt failed.\n");
             }
         } else {
-            fprintf(stderr, "DEBUG: decrypt=%d aead_flag=%d aead_name=%s aead_specified=%d selected_aead=%d\n",
-                    args.decrypt, args.aead_flag, args.aead_name ? args.aead_name : "(null)", aead_specified, selected_aead);
-            printf("[+] Decrypting '%s' → '%s'\n", args.input_file, args.output_file);
+            printf("INFO: Decrypting '%s' -> '%s'\n", args.input_file, args.output_file);
             if (decrypt_file(args.input_file, args.output_file, password) == 0) {
-                printf("✅ Decryption complete: %s\n", args.output_file);
+                printf("SUCCESS: Decryption complete: %s\n", args.output_file);
                 if (!args.keep) {
                     remove(args.input_file);
-                    printf("[–] Encrypted file deleted.\n");
+                    printf("INFO: Encrypted file deleted.\n");
                 }
             } else {
-                fprintf(stderr, "[x] Decryption failed.\n");
+                fprintf(stderr, "ERROR: Decryption failed.\n");
             }
         }
     }

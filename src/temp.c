@@ -112,7 +112,7 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
 
     chmod(temp_path, S_IRUSR | S_IWUSR);
 
-    printf("[+] Opened temporary file: %s\n", temp_path);
+    printf("INFO: Opened temporary file: %s\n", temp_path);
     pid_t pid = fork();
     if (pid == 0) {
         /* Child: try several openers depending on environment. Prefer Termux on Android */
@@ -171,7 +171,7 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     char out_tmp[1024];
     snprintf(out_tmp, sizeof(out_tmp), "%s.tmp", aaf_path);
     if (encrypt_file_with_name(temp_path, out_tmp, password, original_name) != 0) {
-        fprintf(stderr, "Re-encryption failed — plaintext kept at: %s\n", temp_path);
+        fprintf(stderr, "ERROR: Re-encryption failed — plaintext kept at: %s\n", temp_path);
         return 1;
     }
     if (rename(out_tmp, aaf_path) != 0) {
@@ -181,6 +181,6 @@ int temp_decrypt_and_open(const char *aaf_path, const char *password) {
     /* safest cleanup: unlink first, unlink only */
     unlink(temp_path);
 
-    printf("✅ Temp view complete; file re-encrypted and plaintext removed.\n");
+    printf("SUCCESS: Temporary view complete; file re-encrypted and plaintext removed.\n");
     return 0;
 }

@@ -401,7 +401,7 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
         unlink(tmp_decrypt_path);
     }
 
-    printf("✅ Decrypted successfully: %s\n",
+    printf("Decrypted successfully: %s\n",
         final_output ? final_output : "(unknown)");
     return 0;
 }

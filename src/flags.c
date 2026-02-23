@@ -53,7 +53,7 @@ int parse_flags(int argc, char *argv[], Arguments *args){
             args->decrypt = 1;
             args->random_name = 2;
         } else {
-            fprintf(stderr, "[X] Unknown argument: %s\n", arg);
+            fprintf(stderr, "ERROR: Unknown argument: %s\n", arg);
             return 1;
         }
     }
