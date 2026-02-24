@@ -14,12 +14,12 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#undef printf
-#undef fprintf
-#undef perror
-#define printf(...) ((void)0)
-#define fprintf(...) ((void)0)
-#define perror(...) ((void)0)
+/* Debug output control: enable with -DCRYPTO_DEBUG at compile time */
+#ifdef CRYPTO_DEBUG
+  #define crypto_debug(fmt, ...) fprintf(stderr, "[crypto] " fmt, ##__VA_ARGS__)
+#else
+  #define crypto_debug(fmt, ...) ((void)0)
+#endif
 
 /* Globals controlled by main.c */
 uint32_t pbkdf2_iterations = 0;
@@ -70,7 +70,7 @@ static int encrypt_file_impl(const char *input_file, const char *output_file,
         size_t fnlen = strlen(header_name);
         if (fnlen > 65535) fnlen = 65535;
         hdr.name_len = (uint16_t)fnlen;
-        strncpy(hdr.original_name, header_name, fnlen);
+        memcpy(hdr.original_name, header_name, fnlen);
     }
     memcpy(hdr.iv, iv, hdr.iv_len);
     if (write_header(out, &hdr) != 0) goto cleanup;
@@ -133,14 +133,16 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
     if (fmt_ver >= 2) {
         if (fread(&kdf_id, 1, 1, in) != 1) { fclose(in); return 1; }
         if (fread(&salt_len, 1, 1, in) != 1) { fclose(in); return 1; }
+        if (salt_len < MIN_SALT_LEN || salt_len > MAX_SALT_LEN) { fclose(in); return 1; }
         if (salt_len > 0) {
-             if ((size_t)salt_len > sizeof(saltbuf)) salt_len = (uint8_t)sizeof(saltbuf);
+            if ((size_t)salt_len > sizeof(saltbuf)) { fclose(in); return 1; }
             if (fread(saltbuf, 1, salt_len, in) != salt_len) { fclose(in); return 1; }
         }
         unsigned char itb[4];
         if (fread(itb, 1, 4, in) != 4) { fclose(in); return 1; }
         iterations = ((uint32_t)itb[0] << 24) | ((uint32_t)itb[1] << 16) | ((uint32_t)itb[2] << 8) | (uint32_t)itb[3];
 
+        if (iterations < MIN_PBKDF2_ITERS) { fclose(in); return 1; }
         if (kdf_id != KDF_PBKDF2_HMAC_SHA256) { fclose(in); return 1; }
         if (!derive_key_pbkdf2(password, saltbuf, salt_len, iterations, key, AES_KEY_SIZE)) {
             fclose(in);

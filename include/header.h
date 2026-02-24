@@ -23,7 +23,12 @@
 /* AEAD identifiers */
 #define AEAD_AES_256_CBC 0
 #define AEAD_AES_256_GCM 1
+#define AEAD_NONE 0  /* same as CBC, explicit for backward compatibility */
 #define DEFAULT_AEAD_ID AEAD_AES_256_GCM
+
+/* Validation thresholds for security */
+#define MIN_PBKDF2_ITERS 10000
+#define MIN_SALT_LEN 8
 
 typedef struct {
     char magic[5];
