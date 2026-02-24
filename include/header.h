@@ -5,9 +5,25 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define MAX_SALT_LEN 64
+/* Cryptographic constants */
+#define AES_KEY_SIZE 32
 #define AES_BLOCK_SIZE 16
+#define GCM_IV_LEN 12
+#define MAX_SALT_LEN 64
+#define DEFAULT_SALT_LEN 16
+#define DEFAULT_PBKDF2_ITERS 600000
+
+/* Format and magic */
 #define NEW_MAGIC "AAF4"
+
+/* KDF identifiers */
+#define KDF_NONE 0
+#define KDF_PBKDF2_HMAC_SHA256 1
+
+/* AEAD identifiers */
+#define AEAD_AES_256_CBC 0
+#define AEAD_AES_256_GCM 1
+#define DEFAULT_AEAD_ID AEAD_AES_256_GCM
 
 typedef struct {
     char magic[5];
