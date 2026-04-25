@@ -56,7 +56,7 @@ static int encrypt_file_impl(const char *input_file, const char *output_file,
 
     aaf_header_t hdr;
     memset(&hdr, 0, sizeof(hdr));
-    hdr.fmt_ver = NEW_FORMAT_VERSION;
+    hdr.fmt_ver = NEW_FORMAT_VERSION;  /* v3 with comp_id support */
     hdr.kdf_id = KDF_PBKDF2_HMAC_SHA256;
     hdr.salt_len = DEFAULT_SALT_LEN;
     memcpy(hdr.salt, salt, DEFAULT_SALT_LEN);
@@ -155,10 +155,12 @@ int decrypt_file(const char *input_file, const char *output_placeholder, const c
         if (fread(&aead_id, 1, 1, in) != 1) { fclose(in); return 1; }
         unsigned char nextb = 0;
         if (fread(&nextb, 1, 1, in) != 1) { fclose(in); return 1; }
+        /* fmt_ver 3+ has comp_id; v2 doesn't. Disambiguate: if nextb <= 1, it's comp_id (v3+) */
         if (nextb <= 1) {
             comp_id = nextb;
             if (fread(&iv_len, 1, 1, in) != 1) { fclose(in); return 1; }
         } else {
+            /* v2 format (legacy): nextb is iv_len, no comp_id */
             comp_id = 0;
             iv_len = nextb;
         }

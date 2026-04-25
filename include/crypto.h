@@ -14,7 +14,6 @@
 /* Common constants exposed to other modules */
 #define AES_BLOCK_SIZE 16
 #define NEW_MAGIC "AAF4"
-#define NEW_FORMAT_VERSION 2
 
 /* Header parsing is provided by include/header.h */
 #include "header.h"

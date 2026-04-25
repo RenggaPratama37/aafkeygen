@@ -16,6 +16,13 @@
 /* Format and magic */
 #define NEW_MAGIC "AAF4"
 
+/* Format version history:
+ * v1: legacy (dropped)
+ * v2: PBKDF2, AEAD, no comp_id (old files — backward compat issue)
+ * v3: PBKDF2, AEAD, WITH comp_id (current format — FIX)
+ */
+#define NEW_FORMAT_VERSION 3
+
 /* KDF identifiers */
 #define KDF_NONE 0
 #define KDF_PBKDF2_HMAC_SHA256 1
